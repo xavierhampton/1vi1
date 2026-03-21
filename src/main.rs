@@ -1,10 +1,11 @@
+mod combat;
 mod game;
 mod level;
 mod physics;
 mod player;
 mod render;
 
-use game::world::World;
+use game::world::{World, MAX_BULLETS, RELOAD_TIME};
 use raylib::prelude::*;
 use render::crt::CrtFilter;
 
@@ -153,8 +154,25 @@ fn main() {
                         arrow_start.y + ay * aim_len,
                         pz,
                     );
-                    d3.draw_cylinder_ex(arrow_start, shaft_end, 0.03, 0.03, 6, player.color);
-                    d3.draw_cylinder_ex(shaft_end, tip, 0.1, 0.0, 6, player.color);
+                    let arrow_color = Color::new(player.color.r, player.color.g, player.color.b, 160);
+                    d3.draw_cylinder_ex(arrow_start, shaft_end, 0.03, 0.03, 6, arrow_color);
+                    d3.draw_cylinder_ex(shaft_end, tip, 0.1, 0.0, 6, arrow_color);
+                }
+
+                // Draw bullets + tracers
+                for bullet in &world.bullets {
+                    let vlen = (bullet.velocity.x.powi(2) + bullet.velocity.y.powi(2)).sqrt();
+                    let trail_pos = if vlen > 0.001 {
+                        let t = 0.8;
+                        Vector3::new(
+                            bullet.position.x - bullet.velocity.x / vlen * t,
+                            bullet.position.y - bullet.velocity.y / vlen * t,
+                            bullet.position.z,
+                        )
+                    } else {
+                        bullet.position
+                    };
+                    d3.draw_cylinder_ex(trail_pos, bullet.position, 0.02, 0.02, 4, bullet.color);
                 }
             }
         }
@@ -219,6 +237,30 @@ fn main() {
                 let fill_w = (bar_w as f32 * hp_ratio) as i32;
                 d.draw_rectangle(bar_x, bar_y, bar_w, bar_h, Color::new(40, 40, 40, 200));
                 d.draw_rectangle(bar_x, bar_y, fill_w, bar_h, player.color);
+
+                // Bullet pips
+                let pip_size = 7;
+                let pip_gap = 4;
+                let total_pip_w = MAX_BULLETS * (pip_size + pip_gap) - pip_gap;
+                let pip_x = sx - total_pip_w / 2;
+                let pip_y = bar_y + bar_h + 5;
+                for i in 0..MAX_BULLETS {
+                    let px = pip_x + i * (pip_size + pip_gap);
+                    let pip_color = if i < player.bullets_remaining {
+                        player.color
+                    } else {
+                        Color::new(40, 40, 40, 200)
+                    };
+                    d.draw_rectangle(px, pip_y, pip_size, pip_size, pip_color);
+                }
+
+                // Reload bar: overlays the pip row when reloading
+                if player.reload_timer > 0.0 {
+                    let reload_ratio = 1.0 - (player.reload_timer / RELOAD_TIME);
+                    let reload_fill = (total_pip_w as f32 * reload_ratio) as i32;
+                    d.draw_rectangle(pip_x, pip_y, total_pip_w, pip_size, Color::new(40, 40, 40, 200));
+                    d.draw_rectangle(pip_x, pip_y, reload_fill, pip_size, Color::new(200, 200, 200, 220));
+                }
             }
 
             d.draw_fps(10, 10);

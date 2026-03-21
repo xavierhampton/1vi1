@@ -1,10 +1,15 @@
 use raylib::prelude::*;
 
+use crate::combat::bullet::{Bullet, SHOOT_COOLDOWN};
+use crate::combat::combat::update_bullets;
 use crate::game::state::GameState;
 use crate::level::level::Level;
 use crate::player::input;
 use crate::player::movement;
 use crate::player::player::Player;
+
+pub const MAX_BULLETS: i32 = 3;
+pub const RELOAD_TIME: f32 = 1.5;
 
 const PLAYER_COLORS: [Color; 4] = [
     Color::new(80, 180, 255, 255),  // Blue
@@ -17,6 +22,7 @@ const PLAYER_NAMES: [&str; 4] = ["Xavier", "Keehin", "P3", "P4"];
 
 pub struct World {
     pub players: Vec<Player>,
+    pub bullets: Vec<Bullet>,
     pub level: Level,
     pub state: GameState,
 }
@@ -41,6 +47,7 @@ impl World {
             .collect();
         Self {
             players,
+            bullets: Vec::new(),
             level,
             state: GameState::Playing,
         }
@@ -60,6 +67,39 @@ impl World {
                 if len > 0.001 {
                     self.players[0].aim_dir = Vector2::new(dx / len, dy / len);
                 }
+
+                // Reload
+                if self.players[0].reload_timer > 0.0 {
+                    self.players[0].reload_timer = (self.players[0].reload_timer - dt).max(0.0);
+                    if self.players[0].reload_timer <= 0.0 {
+                        self.players[0].bullets_remaining = MAX_BULLETS;
+                    }
+                }
+
+                // Shoot
+                self.players[0].shoot_cooldown = (self.players[0].shoot_cooldown - dt).max(0.0);
+                if p1_input.shoot_pressed
+                    && self.players[0].shoot_cooldown <= 0.0
+                    && self.players[0].bullets_remaining > 0
+                    && self.players[0].reload_timer <= 0.0
+                {
+                    let aim = self.players[0].aim_dir;
+                    let color = self.players[0].color;
+                    let spawn = Vector3::new(
+                        self.players[0].position.x + aim.x * 0.5,
+                        self.players[0].position.y + 1.1 + aim.y * 0.5,
+                        self.players[0].position.z,
+                    );
+                    self.bullets.push(Bullet::new(spawn, aim, 0, color));
+                    self.players[0].bullets_remaining -= 1;
+                    self.players[0].shoot_cooldown = SHOOT_COOLDOWN;
+                    if self.players[0].bullets_remaining == 0 {
+                        self.players[0].reload_timer = RELOAD_TIME;
+                    }
+                }
+
+                // Update bullets
+                update_bullets(&mut self.bullets, &mut self.players, &self.level.platforms, dt);
 
                 // Reset if fallen off map
                 if self.players[0].position.y < -10.0 {
