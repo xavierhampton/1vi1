@@ -12,10 +12,13 @@ pub struct Player {
     pub jump_cut_applied: bool,
     pub air_jumps: i32,
     pub aim_dir: Vector2,
+    pub name: String,
+    pub hp: f32,
+    pub max_hp: f32,
 }
 
 impl Player {
-    pub fn new(position: Vector3, size: Vector3, color: Color) -> Self {
+    pub fn new(position: Vector3, size: Vector3, color: Color, name: &str) -> Self {
         Self {
             position,
             velocity: Vector3::new(0.0, 0.0, 0.0),
@@ -26,6 +29,9 @@ impl Player {
             jump_cut_applied: false,
             air_jumps: 0,
             aim_dir: Vector2::new(1.0, 0.0),
+            name: name.to_string(),
+            hp: 100.0,
+            max_hp: 100.0,
         }
     }
 

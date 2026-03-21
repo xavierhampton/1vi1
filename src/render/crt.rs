@@ -1,18 +1,31 @@
 use raylib::prelude::*;
 
 pub struct CrtFilter {
-    pub target: RenderTexture2D,
+    pub env_target: RenderTexture2D,
+    pub player_target: RenderTexture2D,
     pub shader: Shader,
+    pub shader_no_aberration: Shader,
 }
 
 impl CrtFilter {
     pub fn new(rl: &mut RaylibHandle, thread: &RaylibThread, width: i32, height: i32) -> Self {
-        let target = rl
+        let env_target = rl
             .load_render_texture(thread, width as u32, height as u32)
             .expect("Failed to create render texture");
 
-        let shader = rl.load_shader(thread, None, Some("assets/shaders/crt.fs"));
+        let player_target = rl
+            .load_render_texture(thread, width as u32, height as u32)
+            .expect("Failed to create player render texture");
 
-        Self { target, shader }
+        let shader = rl.load_shader(thread, None, Some("assets/shaders/crt.fs"));
+        let shader_no_aberration =
+            rl.load_shader(thread, None, Some("assets/shaders/crt_no_aberration.fs"));
+
+        Self {
+            env_target,
+            player_target,
+            shader,
+            shader_no_aberration,
+        }
     }
 }

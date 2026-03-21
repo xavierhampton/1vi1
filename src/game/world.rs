@@ -6,27 +6,39 @@ use crate::player::input;
 use crate::player::movement;
 use crate::player::player::Player;
 
+const PLAYER_COLORS: [Color; 4] = [
+    Color::new(80, 180, 255, 255),  // Blue
+    Color::new(255, 100, 80, 255),  // Red
+    Color::new(100, 230, 120, 255), // Green
+    Color::new(255, 200, 60, 255),  // Yellow
+];
+
+const PLAYER_NAMES: [&str; 4] = ["Xavier", "Keehin", "P3", "P4"];
+
 pub struct World {
-    pub players: [Player; 2],
+    pub players: Vec<Player>,
     pub level: Level,
     pub state: GameState,
 }
 
 impl World {
     pub fn new() -> Self {
+        Self::with_player_count(2)
+    }
+
+    pub fn with_player_count(count: usize) -> Self {
+        let count = count.clamp(2, 4);
         let level = Level::test_level();
-        let players = [
-            Player::new(
-                level.spawn_points[0],
-                Vector3::new(0.6, 1.6, 0.6),
-                Color::new(80, 180, 255, 255),
-            ),
-            Player::new(
-                level.spawn_points[1],
-                Vector3::new(0.6, 1.6, 0.6),
-                Color::new(255, 100, 80, 255),
-            ),
-        ];
+        let players = (0..count)
+            .map(|i| {
+                Player::new(
+                    level.spawn_points[i],
+                    Vector3::new(0.6, 1.6, 0.6),
+                    PLAYER_COLORS[i],
+                    PLAYER_NAMES[i],
+                )
+            })
+            .collect();
         Self {
             players,
             level,

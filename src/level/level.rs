@@ -4,7 +4,7 @@ use crate::level::platforms::Platform;
 
 pub struct Level {
     pub platforms: Vec<Platform>,
-    pub spawn_points: [Vector3; 2],
+    pub spawn_points: Vec<Vector3>,
 }
 
 impl Level {
@@ -53,9 +53,11 @@ impl Level {
 
         Self {
             platforms,
-            spawn_points: [
+            spawn_points: vec![
                 Vector3::new(-6.0, 0.0, 0.0),
                 Vector3::new(6.0, 0.0, 0.0),
+                Vector3::new(-10.0, 0.0, 0.0),
+                Vector3::new(10.0, 0.0, 0.0),
             ],
         }
     }
