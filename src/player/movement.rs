@@ -1,0 +1,152 @@
+use crate::level::platforms::Platform;
+use crate::player::input::PlayerInput;
+use crate::player::player::Player;
+
+const GRAVITY: f32 = 30.0;
+const MAX_FALL_SPEED: f32 = 20.0;
+const MOVE_SPEED: f32 = 8.0;
+const MOVE_ACCEL: f32 = 40.0;
+const MOVE_DECEL: f32 = 35.0;
+const AIR_ACCEL: f32 = 8.0;
+const AIR_COUNTER_ACCEL: f32 = 22.0;
+const MAX_BHOP_SPEED: f32 = 12.0;
+const BHOP_SPEED_BOOST: f32 = 0.15;
+const JUMP_VELOCITY: f32 = 11.6;
+const JUMP_CUT_MULTIPLIER: f32 = 0.5;
+const COYOTE_TIME: f32 = 0.08;
+const MAX_AIR_JUMPS: i32 = 1;
+
+pub fn update(player: &mut Player, input: &PlayerInput, platforms: &[Platform], dt: f32) {
+    let prev_grounded = player.grounded;
+    player.grounded = false;
+    let mut jumped = false;
+
+    // Bhop: if holding jump on landing, skip ground friction entirely
+    let is_bhop_frame = input.jump_held && prev_grounded;
+
+    if prev_grounded && !is_bhop_frame {
+        // Ground movement: full accel/decel with speed cap
+        if input.move_dir != 0.0 {
+            player.velocity.x += input.move_dir * MOVE_ACCEL * dt;
+            player.velocity.x = player.velocity.x.clamp(-MOVE_SPEED, MOVE_SPEED);
+        } else {
+            let decel = MOVE_DECEL * dt;
+            if player.velocity.x > 0.0 {
+                player.velocity.x = (player.velocity.x - decel).max(0.0);
+            } else if player.velocity.x < 0.0 {
+                player.velocity.x = (player.velocity.x + decel).min(0.0);
+            }
+        }
+    } else {
+        // Air / bhop: momentum preserved, counter-strafe is stronger for direction changes
+        if input.move_dir != 0.0 {
+            let against = (input.move_dir > 0.0 && player.velocity.x < 0.0)
+                || (input.move_dir < 0.0 && player.velocity.x > 0.0);
+            let accel = if against { AIR_COUNTER_ACCEL } else { AIR_ACCEL };
+            player.velocity.x += input.move_dir * accel * dt;
+            player.velocity.x = player.velocity.x.clamp(-MAX_BHOP_SPEED, MAX_BHOP_SPEED);
+        }
+    }
+
+    // Gravity
+    player.velocity.y -= GRAVITY * dt;
+    if player.velocity.y < -MAX_FALL_SPEED {
+        player.velocity.y = -MAX_FALL_SPEED;
+    }
+
+    // Jump (bunny hop: holding jump auto-jumps on landing)
+    let jump_trigger = input.jump_pressed || (input.jump_held && prev_grounded);
+    let can_ground_jump = prev_grounded || player.coyote_timer > 0.0;
+    let can_air_jump = input.jump_pressed && player.air_jumps < MAX_AIR_JUMPS;
+    if jump_trigger && can_ground_jump {
+        player.velocity.y = JUMP_VELOCITY;
+        player.coyote_timer = 0.0;
+        jumped = true;
+        player.jump_cut_applied = false;
+        player.air_jumps = 0;
+        // Bhop: small speed boost in movement direction
+        if input.move_dir != 0.0 && player.velocity.x.abs() < MAX_BHOP_SPEED {
+            player.velocity.x += input.move_dir * BHOP_SPEED_BOOST;
+        }
+    } else if can_air_jump {
+        player.velocity.y = JUMP_VELOCITY;
+        player.air_jumps += 1;
+        jumped = true;
+        player.jump_cut_applied = false;
+    }
+
+    // Variable jump height: one-time cut when jump key released
+    if !input.jump_held && player.velocity.y > 0.0 && !player.jump_cut_applied {
+        player.velocity.y *= JUMP_CUT_MULTIPLIER;
+        player.jump_cut_applied = true;
+    }
+
+    // Move both axes
+    player.position.x += player.velocity.x * dt;
+    player.position.y += player.velocity.y * dt;
+
+    // Resolve collisions using minimum penetration
+    resolve_collisions(player, platforms);
+
+    // Reset when grounded
+    if player.grounded {
+        player.jump_cut_applied = false;
+        player.air_jumps = 0;
+    }
+
+    // Coyote time
+    if prev_grounded && !player.grounded && !jumped {
+        player.coyote_timer = COYOTE_TIME;
+    }
+    if player.grounded {
+        player.coyote_timer = 0.0;
+    }
+    player.coyote_timer = (player.coyote_timer - dt).max(0.0);
+}
+
+fn resolve_collisions(player: &mut Player, platforms: &[Platform]) {
+    for _ in 0..4 {
+        let paabb = player.aabb();
+        let mut resolved = false;
+
+        for platform in platforms {
+            if !paabb.overlaps(&platform.aabb) {
+                continue;
+            }
+
+            let pen_left = paabb.max.x - platform.aabb.min.x;
+            let pen_right = platform.aabb.max.x - paabb.min.x;
+            let pen_bottom = paabb.max.y - platform.aabb.min.y;
+            let pen_top = platform.aabb.max.y - paabb.min.y;
+
+            let min_pen_x = pen_left.min(pen_right);
+            let min_pen_y = pen_bottom.min(pen_top);
+
+            if min_pen_x < min_pen_y {
+                // Resolve horizontal
+                if pen_left < pen_right {
+                    player.position.x -= pen_left;
+                } else {
+                    player.position.x += pen_right;
+                }
+                player.velocity.x = 0.0;
+            } else {
+                // Resolve vertical
+                if pen_top < pen_bottom {
+                    player.position.y = platform.aabb.max.y;
+                    player.grounded = true;
+                } else {
+                    player.position.y = platform.aabb.min.y - player.size.y;
+                }
+                player.velocity.y = 0.0;
+            }
+
+            resolved = true;
+            break;
+        }
+
+        if !resolved {
+            break;
+        }
+    }
+}
