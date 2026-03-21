@@ -6,6 +6,7 @@ mod player;
 mod render;
 
 use game::world::{World, MAX_BULLETS, RELOAD_TIME};
+use player::player::HIT_FLASH_DURATION;
 use raylib::prelude::*;
 use render::crt::CrtFilter;
 
@@ -82,13 +83,26 @@ fn main() {
                     let py = player.position.y;
                     let pz = player.position.z;
 
+                    // Hit flash: blend toward white
+                    let render_color = if player.hit_flash_timer > 0.0 {
+                        let t = (player.hit_flash_timer / HIT_FLASH_DURATION).min(1.0);
+                        Color::new(
+                            (player.color.r as f32 + (255.0 - player.color.r as f32) * t) as u8,
+                            (player.color.g as f32 + (255.0 - player.color.g as f32) * t) as u8,
+                            (player.color.b as f32 + (255.0 - player.color.b as f32) * t) as u8,
+                            255,
+                        )
+                    } else {
+                        player.color
+                    };
+
                     // Body + head spheres
                     let body_r = 0.38;
                     let head_r = 0.28;
                     let body_center = Vector3::new(px, py + 0.5, pz);
                     let head_center = Vector3::new(px, py + 1.15, pz);
-                    d3.draw_sphere(body_center, body_r, player.color);
-                    d3.draw_sphere(head_center, head_r, player.color);
+                    d3.draw_sphere(body_center, body_r, render_color);
+                    d3.draw_sphere(head_center, head_r, render_color);
 
                     // Eyes that track aim direction (billboarded to camera plane)
                     let eye_r = 0.065;
@@ -174,8 +188,21 @@ fn main() {
                     };
                     d3.draw_cylinder_ex(trail_pos, bullet.position, 0.02, 0.02, 4, bullet.color);
                 }
+
+                // Draw particles (fade to black as they die)
+                for p in &world.particles {
+                    let fade = (p.lifetime / p.max_lifetime).clamp(0.0, 1.0);
+                    let c = Color::new(
+                        (p.color.r as f32 * fade) as u8,
+                        (p.color.g as f32 * fade) as u8,
+                        (p.color.b as f32 * fade) as u8,
+                        255,
+                    );
+                    d3.draw_sphere(p.position, p.size, c);
+                }
             }
         }
+
 
         // Composite to screen
         {

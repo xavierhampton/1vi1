@@ -2,6 +2,7 @@ use raylib::prelude::*;
 
 use crate::combat::bullet::{Bullet, SHOOT_COOLDOWN};
 use crate::combat::combat::update_bullets;
+use crate::combat::particles::{update_particles, Particle, Rng};
 use crate::game::state::GameState;
 use crate::level::level::Level;
 use crate::player::input;
@@ -23,8 +24,10 @@ const PLAYER_NAMES: [&str; 4] = ["Xavier", "Keehin", "P3", "P4"];
 pub struct World {
     pub players: Vec<Player>,
     pub bullets: Vec<Bullet>,
+    pub particles: Vec<Particle>,
     pub level: Level,
     pub state: GameState,
+    rng: Rng,
 }
 
 impl World {
@@ -45,11 +48,18 @@ impl World {
                 )
             })
             .collect();
+        let seed = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos() as u64)
+            .unwrap_or(42);
+
         Self {
             players,
             bullets: Vec::new(),
+            particles: Vec::new(),
             level,
             state: GameState::Playing,
+            rng: Rng::new(seed),
         }
     }
 
@@ -98,8 +108,14 @@ impl World {
                     }
                 }
 
-                // Update bullets
-                update_bullets(&mut self.bullets, &mut self.players, &self.level.platforms, dt);
+                // Tick hit flash timers
+                for player in self.players.iter_mut() {
+                    player.hit_flash_timer = (player.hit_flash_timer - dt).max(0.0);
+                }
+
+                // Update bullets + particles
+                update_bullets(&mut self.bullets, &mut self.players, &self.level.platforms, &mut self.particles, &mut self.rng, dt);
+                update_particles(&mut self.particles, dt);
 
                 // Reset if fallen off map
                 if self.players[0].position.y < -10.0 {

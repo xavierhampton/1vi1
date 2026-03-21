@@ -1,15 +1,20 @@
 use crate::combat::bullet::{Bullet, BULLET_DAMAGE, BULLET_GRAVITY};
+use crate::combat::particles::{spawn_player_hit, spawn_terrain_hit, Particle, Rng};
 use crate::level::platforms::Platform;
-use crate::player::player::Player;
+use crate::player::player::{Player, HIT_FLASH_DURATION};
 
-pub fn update_bullets(bullets: &mut Vec<Bullet>, players: &mut [Player], platforms: &[Platform], dt: f32) {
+pub fn update_bullets(
+    bullets: &mut Vec<Bullet>,
+    players: &mut [Player],
+    platforms: &[Platform],
+    particles: &mut Vec<Particle>,
+    rng: &mut Rng,
+    dt: f32,
+) {
     for bullet in bullets.iter_mut() {
         bullet.prev_position = bullet.position;
 
-        // Gravity
         bullet.velocity.y -= BULLET_GRAVITY * dt;
-
-        // Move
         bullet.position.x += bullet.velocity.x * dt;
         bullet.position.y += bullet.velocity.y * dt;
         bullet.lifetime -= dt;
@@ -23,6 +28,7 @@ pub fn update_bullets(bullets: &mut Vec<Bullet>, players: &mut [Player], platfor
         // Platform collision
         for platform in platforms {
             if baabb.overlaps(&platform.aabb) {
+                spawn_terrain_hit(particles, rng, bullet.prev_position, bullet.color);
                 bullet.lifetime = 0.0;
                 break;
             }
@@ -38,6 +44,9 @@ pub fn update_bullets(bullets: &mut Vec<Bullet>, players: &mut [Player], platfor
                 continue;
             }
             if baabb.overlaps(&player.aabb()) {
+                let hit_pos = player.render_center();
+                spawn_player_hit(particles, rng, hit_pos, player.color);
+                player.hit_flash_timer = HIT_FLASH_DURATION;
                 player.hp = (player.hp - BULLET_DAMAGE).max(0.0);
                 bullet.lifetime = 0.0;
                 break;

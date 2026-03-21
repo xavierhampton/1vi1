@@ -2,6 +2,8 @@ use raylib::prelude::*;
 
 use crate::physics::collision::AABB;
 
+pub const HIT_FLASH_DURATION: f32 = 0.15;
+
 pub struct Player {
     pub position: Vector3,
     pub velocity: Vector3,
@@ -15,6 +17,7 @@ pub struct Player {
     pub shoot_cooldown: f32,
     pub bullets_remaining: i32,
     pub reload_timer: f32,
+    pub hit_flash_timer: f32,
     pub name: String,
     pub hp: f32,
     pub max_hp: f32,
@@ -35,6 +38,7 @@ impl Player {
             shoot_cooldown: 0.0,
             bullets_remaining: 3,
             reload_timer: 0.0,
+            hit_flash_timer: 0.0,
             name: name.to_string(),
             hp: 100.0,
             max_hp: 100.0,
