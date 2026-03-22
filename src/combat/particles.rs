@@ -82,3 +82,36 @@ pub fn spawn_player_hit(particles: &mut Vec<Particle>, rng: &mut Rng, pos: Vecto
         });
     }
 }
+
+pub fn spawn_death_explosion(particles: &mut Vec<Particle>, rng: &mut Rng, pos: Vector3, color: Color) {
+    // Big burst of player-colored particles
+    for _ in 0..40 {
+        let angle = rng.range(0.0, std::f32::consts::TAU);
+        let speed = rng.range(4.0, 14.0);
+        let lifetime = rng.range(0.5, 1.2);
+        particles.push(Particle {
+            position: pos,
+            vel_x: angle.cos() * speed,
+            vel_y: angle.sin() * speed + 3.0,
+            lifetime,
+            max_lifetime: lifetime,
+            color,
+            size: rng.range(0.06, 0.16),
+        });
+    }
+    // White flash particles
+    for _ in 0..15 {
+        let angle = rng.range(0.0, std::f32::consts::TAU);
+        let speed = rng.range(2.0, 8.0);
+        let lifetime = rng.range(0.2, 0.5);
+        particles.push(Particle {
+            position: pos,
+            vel_x: angle.cos() * speed,
+            vel_y: angle.sin().abs() * speed + 5.0,
+            lifetime,
+            max_lifetime: lifetime,
+            color: Color::new(255, 255, 255, 255),
+            size: rng.range(0.04, 0.10),
+        });
+    }
+}

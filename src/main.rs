@@ -5,6 +5,7 @@ mod physics;
 mod player;
 mod render;
 
+use game::state::GameState;
 use game::world::{World, MAX_BULLETS, RELOAD_TIME};
 use player::player::HIT_FLASH_DURATION;
 use raylib::prelude::*;
@@ -79,6 +80,9 @@ fn main() {
                 }
 
                 for player in &world.players {
+                    if !player.alive {
+                        continue;
+                    }
                     let px = player.position.x;
                     let py = player.position.y;
                     let pz = player.position.z;
@@ -241,8 +245,11 @@ fn main() {
                 );
             }
 
-            // HUD: player names + HP bars
+            // HUD: player names + HP bars (alive only)
             for player in &world.players {
+                if !player.alive {
+                    continue;
+                }
                 let above_head = Vector3::new(
                     player.position.x,
                     player.position.y + player.size.y + 0.15,
@@ -288,6 +295,36 @@ fn main() {
                     d.draw_rectangle(pip_x, pip_y, total_pip_w, pip_size, Color::new(40, 40, 40, 200));
                     d.draw_rectangle(pip_x, pip_y, reload_fill, pip_size, Color::new(200, 200, 200, 220));
                 }
+            }
+
+            // Score display (top center)
+            {
+                let score_font = 28;
+                let mut score_parts: Vec<String> = Vec::new();
+                for (i, player) in world.players.iter().enumerate() {
+                    score_parts.push(format!("{}: {}", player.name, world.scores[i]));
+                }
+                let score_text = score_parts.join("  ");
+                let score_w = d.measure_text(&score_text, score_font);
+                d.draw_text(&score_text, render_w / 2 - score_w / 2, 12, score_font, Color::new(200, 200, 200, 200));
+            }
+
+            // Countdown text
+            if let GameState::RoundStart { timer } = &world.state {
+                let num = timer.ceil() as i32;
+                let text = format!("{}", num.max(1));
+                let font_size = 120;
+                let text_w = d.measure_text(&text, font_size);
+                d.draw_text(&text, render_w / 2 - text_w / 2, render_h / 2 - font_size / 2, font_size, Color::WHITE);
+            }
+
+            // Win text
+            if let GameState::RoundEnd { winner_name, winner_color, .. } = &world.state {
+                let text = format!("{} Wins!", winner_name);
+                let font_size = 80;
+                let text_w = d.measure_text(&text, font_size);
+                let color = Color::new(winner_color.0, winner_color.1, winner_color.2, 255);
+                d.draw_text(&text, render_w / 2 - text_w / 2, render_h / 2 - font_size / 2, font_size, color);
             }
 
             d.draw_fps(10, 10);

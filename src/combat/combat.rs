@@ -40,7 +40,7 @@ pub fn update_bullets(
 
         // Player collision
         for (i, player) in players.iter_mut().enumerate() {
-            if i == bullet.owner {
+            if i == bullet.owner || !player.alive {
                 continue;
             }
             if baabb.overlaps(&player.aabb()) {

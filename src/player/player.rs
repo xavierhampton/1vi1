@@ -21,6 +21,7 @@ pub struct Player {
     pub name: String,
     pub hp: f32,
     pub max_hp: f32,
+    pub alive: bool,
 }
 
 impl Player {
@@ -42,6 +43,7 @@ impl Player {
             name: name.to_string(),
             hp: 100.0,
             max_hp: 100.0,
+            alive: true,
         }
     }
 
