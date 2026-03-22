@@ -5,6 +5,7 @@ use crate::combat::combat::update_bullets;
 use crate::combat::particles::{spawn_death_explosion, update_particles, Particle, Rng};
 use crate::game::state::GameState;
 use crate::level::level::Level;
+use crate::lobby::state::LobbyState;
 use crate::player::input;
 use crate::player::movement;
 use crate::player::player::Player;
@@ -53,6 +54,33 @@ impl World {
                 )
             })
             .collect();
+        let seed = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos() as u64)
+            .unwrap_or(42);
+
+        Self {
+            players,
+            bullets: Vec::new(),
+            particles: Vec::new(),
+            level,
+            state: GameState::RoundStart { timer: COUNTDOWN_DURATION },
+            scores: vec![0; count],
+            rng: Rng::new(seed),
+        }
+    }
+
+    pub fn from_lobby(lobby: &LobbyState) -> Self {
+        let level = Level::test_level();
+        let count = lobby.slots.len().clamp(2, 4);
+        let players = lobby.slots.iter().enumerate().take(count).map(|(i, slot)| {
+            Player::new(
+                level.spawn_points[i],
+                Vector3::new(0.6, 1.6, 0.6),
+                slot.color.to_color(),
+                &slot.name,
+            )
+        }).collect();
         let seed = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_nanos() as u64)
