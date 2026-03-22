@@ -38,22 +38,25 @@ impl MenuParticles {
         // Ambient: occasional sparks from edges
         self.ambient_timer -= dt;
         if self.ambient_timer <= 0.0 {
-            self.ambient_timer = self.rng.range(0.3, 1.0);
-            let side = (self.rng.next_f32() * 4.0) as i32;
-            let (x, y, vx, vy) = match side {
-                0 => (0.0, self.rng.range(0.0, screen_h as f32), self.rng.range(20.0, 60.0), self.rng.range(-30.0, 30.0)),
-                1 => (screen_w as f32, self.rng.range(0.0, screen_h as f32), self.rng.range(-60.0, -20.0), self.rng.range(-30.0, 30.0)),
-                2 => (self.rng.range(0.0, screen_w as f32), 0.0, self.rng.range(-30.0, 30.0), self.rng.range(20.0, 50.0)),
-                _ => (self.rng.range(0.0, screen_w as f32), screen_h as f32, self.rng.range(-30.0, 30.0), self.rng.range(-50.0, -20.0)),
-            };
-            let life = self.rng.range(1.5, 3.0);
-            self.particles.push(MenuParticle {
-                x, y, vx, vy,
-                life,
-                max_life: life,
-                size: self.rng.range(2.0, 5.0),
-                color: Color::new(accent.r, accent.g, accent.b, 120),
-            });
+            self.ambient_timer = self.rng.range(0.08, 0.25);
+            let count = (self.rng.next_f32() * 2.0) as i32 + 1; // 1-3 per burst
+            for _ in 0..count {
+                let side = (self.rng.next_f32() * 4.0) as i32;
+                let (x, y, vx, vy) = match side {
+                    0 => (0.0, self.rng.range(0.0, screen_h as f32), self.rng.range(20.0, 60.0), self.rng.range(-30.0, 30.0)),
+                    1 => (screen_w as f32, self.rng.range(0.0, screen_h as f32), self.rng.range(-60.0, -20.0), self.rng.range(-30.0, 30.0)),
+                    2 => (self.rng.range(0.0, screen_w as f32), 0.0, self.rng.range(-30.0, 30.0), self.rng.range(20.0, 50.0)),
+                    _ => (self.rng.range(0.0, screen_w as f32), screen_h as f32, self.rng.range(-30.0, 30.0), self.rng.range(-50.0, -20.0)),
+                };
+                let life = self.rng.range(1.5, 3.0);
+                self.particles.push(MenuParticle {
+                    x, y, vx, vy,
+                    life,
+                    max_life: life,
+                    size: self.rng.range(2.0, 5.0),
+                    color: Color::new(accent.r, accent.g, accent.b, 120),
+                });
+            }
         }
 
         for p in self.particles.iter_mut() {

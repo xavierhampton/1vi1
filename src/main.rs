@@ -107,6 +107,10 @@ fn main() {
             }
             AppState::Lobby(role) => {
                 lobby_time += dt;
+                let w_now = rl.get_screen_width();
+                let h_now = rl.get_screen_height();
+                let accent = menu.theme().particle_color_primary;
+                menu.fx.update(dt, w_now, h_now, accent);
                 let input = lobby_input(&rl);
 
                 match role {
@@ -154,6 +158,7 @@ fn main() {
                                 &server.my_addr,
                                 theme,
                                 lobby_time,
+                                &menu.fx,
                             );
                         }
                     }
@@ -210,6 +215,7 @@ fn main() {
                                 "",
                                 theme,
                                 lobby_time,
+                                &menu.fx,
                             );
                         }
                     }

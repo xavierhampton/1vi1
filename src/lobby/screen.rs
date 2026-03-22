@@ -1,6 +1,7 @@
 use raylib::prelude::*;
 
 use crate::lobby::state::LobbyState;
+use crate::menu::particles::MenuParticles;
 use crate::menu::theme::Theme;
 
 pub enum LobbyInput {
@@ -56,9 +57,13 @@ pub fn draw_lobby(
     host_addr: &str,
     theme: &Theme,
     time: f32,
+    particles: &MenuParticles,
 ) {
     let w = d.get_screen_width();
     let h = d.get_screen_height();
+
+    // Ambient particles
+    particles.draw(d);
 
     // Background grid (same as menu)
     {
