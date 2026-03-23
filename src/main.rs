@@ -15,6 +15,7 @@ use lobby::screen::{draw_lobby, lobby_input, LobbyInput};
 use lobby::server::LobbyServer;
 use menu::menu::{Menu, MenuAction};
 use raylib::prelude::*;
+use render::cards::CardPickAnim;
 use render::crt::CrtFilter;
 
 const SCREEN_WIDTH: i32 = 960;
@@ -50,6 +51,7 @@ fn main() {
     let mut app_state = AppState::Menu;
     let mut game_time: f32 = 0.0;
     let mut lobby_time: f32 = 0.0;
+    let mut card_anim = CardPickAnim::new();
 
     while !rl.window_should_close() {
         let dt = rl.get_frame_time();
@@ -112,7 +114,11 @@ fn main() {
                 let h_now = rl.get_screen_height();
                 let accent = menu.theme().particle_color_primary;
                 menu.fx.update(dt, w_now, h_now, accent);
-                let input = lobby_input(&rl);
+                let mut input = lobby_input(&rl);
+                // Ignore the Enter keypress that carried over from the join screen
+                if lobby_time < 0.1 && matches!(input, LobbyInput::ToggleReady) {
+                    input = LobbyInput::None;
+                }
 
                 match role {
                     LobbyRole::Host(server) => {
@@ -144,6 +150,7 @@ fn main() {
                             let world = World::from_lobby(&server.state);
                             let parts = server.into_game_parts();
                             game_time = 0.0;
+                            card_anim = CardPickAnim::new();
                             next_state = Some(AppState::InGameHost(
                                 GameServer::new(world, parts),
                             ));
@@ -204,6 +211,7 @@ fn main() {
                             let world = World::from_lobby(&client.state);
                             let parts = client.into_game_parts();
                             game_time = 0.0;
+                            card_anim = CardPickAnim::new();
                             next_state = Some(AppState::InGameClient(
                                 GameClient::new(world, parts),
                             ));
@@ -234,10 +242,11 @@ fn main() {
                     game_time += dt;
                     let camera = render::camera::game_camera(&game_server.world);
                     game_server.update(&rl, &camera, dt);
+                    card_anim.update(&game_server.world, dt);
                     let theme = menu.theme();
                     render::game::draw_world(
                         &mut rl, &thread, &mut crt, &game_server.world, camera,
-                        render_w, render_h, theme, game_time,
+                        render_w, render_h, theme, game_time, &card_anim,
                     );
                 }
             }
@@ -248,10 +257,11 @@ fn main() {
                     game_time += dt;
                     let camera = render::camera::game_camera(&game_client.world);
                     game_client.update(&rl, &camera, dt);
+                    card_anim.update(&game_client.world, dt);
                     let theme = menu.theme();
                     render::game::draw_world(
                         &mut rl, &thread, &mut crt, &game_client.world, camera,
-                        render_w, render_h, theme, game_time,
+                        render_w, render_h, theme, game_time, &card_anim,
                     );
                 }
             }

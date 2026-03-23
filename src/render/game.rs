@@ -4,6 +4,7 @@ use crate::game::state::GameState;
 use crate::game::world::{World, MAX_BULLETS, RELOAD_TIME};
 use crate::menu::theme::Theme;
 use crate::player::player::HIT_FLASH_DURATION;
+use crate::render::cards::{self, CardPickAnim};
 use crate::render::crt::CrtFilter;
 
 pub fn draw_world(
@@ -16,6 +17,7 @@ pub fn draw_world(
     render_h: i32,
     theme: &Theme,
     time: f32,
+    card_anim: &CardPickAnim,
 ) {
     // Draw environment to render texture (CRT + aberration)
     {
@@ -262,6 +264,16 @@ pub fn draw_world(
 
         // HUD
         draw_hud(&mut d, world, camera, render_w, render_h);
+
+        // Card pick overlay
+        if matches!(world.state, GameState::CardPick { .. }) {
+            cards::draw_card_pick(&mut d, world, card_anim, render_w, render_h);
+        }
+
+        // Match over overlay
+        if matches!(world.state, GameState::MatchOver { .. }) {
+            cards::draw_match_over(&mut d, world, render_w, render_h);
+        }
 
         d.draw_fps(10, 10);
     }

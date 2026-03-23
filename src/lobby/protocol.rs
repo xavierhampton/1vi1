@@ -24,6 +24,7 @@ pub enum ServerMsg {
 pub enum ClientIncoming {
     Lobby(ClientMsg),
     GameInput(PlayerInput),
+    CardChoice(u8), // card slot index 0-2
 }
 
 #[derive(Debug)]
@@ -121,10 +122,14 @@ pub fn decode_client_incoming(buf: &[u8]) -> Option<(ClientIncoming, usize)> {
         0x02 => ClientIncoming::Lobby(ClientMsg::ChangeColor { color: data[1] }),
         0x03 => ClientIncoming::Lobby(ClientMsg::ToggleReady),
         0x04 => ClientIncoming::Lobby(ClientMsg::Leave),
-        // Game message
+        // Game messages
         0x10 => {
             let input = net::decode_game_input(&data[1..])?;
             ClientIncoming::GameInput(input)
+        }
+        0x11 => {
+            if data.len() < 2 { return None; }
+            ClientIncoming::CardChoice(data[1])
         }
         _ => return None,
     };
@@ -203,4 +208,13 @@ impl ReadBuffer {
             None
         }
     }
+}
+
+pub fn encode_card_choice(card_index: u8) -> Vec<u8> {
+    let payload_len: u16 = 2;
+    let mut out = Vec::with_capacity(4);
+    out.extend_from_slice(&payload_len.to_be_bytes());
+    out.push(0x11);
+    out.push(card_index);
+    out
 }

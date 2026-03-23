@@ -3,6 +3,7 @@ use raylib::prelude::*;
 use crate::combat::bullet::{Bullet, SHOOT_COOLDOWN};
 use crate::combat::combat::update_bullets;
 use crate::combat::particles::{spawn_death_explosion, spawn_player_hit, spawn_terrain_hit, update_particles, Particle, Rng};
+use crate::game::cards;
 use crate::game::net::{BulletSnapshot, GameEvent, PlayerSnapshot, WorldSnapshot};
 use crate::game::state::GameState;
 use crate::level::level::{self, Level};
@@ -17,6 +18,11 @@ pub const RELOAD_TIME: f32 = 1.5;
 pub const COUNTDOWN_DURATION: f32 = 3.0;
 const ROUND_END_DURATION: f32 = 3.5;
 const SLOW_MO_FACTOR: f32 = 0.25;
+pub const WINS_TO_MATCH: i32 = 3;
+
+const CARD_ENTRANCE_DURATION: f32 = 0.8;
+const CARD_EXIT_DURATION: f32 = 0.5;
+const MATCH_OVER_DURATION: f32 = 5.0;
 
 const PLAYER_COLORS: [Color; 4] = [
     Color::new(80, 180, 255, 255),
@@ -35,6 +41,8 @@ pub struct World {
     pub state: GameState,
     pub scores: Vec<i32>,
     pub rng: Rng,
+    pub cursor_positions: Vec<(f32, f32)>, // normalized cursor per player
+    pub card_hover: u8, // 0xFF = none, 0-2 = picker hovering this card
 }
 
 impl World {
@@ -61,6 +69,7 @@ impl World {
             .unwrap_or(42);
 
         Self {
+            cursor_positions: vec![(0.5, 0.5); count],
             players,
             bullets: Vec::new(),
             particles: Vec::new(),
@@ -68,6 +77,7 @@ impl World {
             state: GameState::RoundStart { timer: COUNTDOWN_DURATION },
             scores: vec![0; count],
             rng: Rng::new(seed),
+            card_hover: 0xFF,
         }
     }
 
@@ -89,6 +99,7 @@ impl World {
         }).collect();
 
         Self {
+            cursor_positions: vec![(0.5, 0.5); count],
             players,
             bullets: Vec::new(),
             particles: Vec::new(),
@@ -96,6 +107,7 @@ impl World {
             state: GameState::RoundStart { timer: COUNTDOWN_DURATION },
             scores: vec![0; count],
             rng,
+            card_hover: 0xFF,
         }
     }
 
@@ -149,10 +161,52 @@ impl World {
     }
 
     fn winner_index(&self) -> u8 {
-        if let GameState::RoundEnd { .. } = &self.state {
-            self.last_alive().unwrap_or(0) as u8
-        } else {
-            0
+        match &self.state {
+            GameState::RoundEnd { winner_index, .. } => *winner_index,
+            GameState::CardPick { winner_index, .. } => *winner_index,
+            GameState::MatchOver { winner_index, .. } => *winner_index,
+            _ => 0,
+        }
+    }
+
+    /// Build the pick order: all losers (non-winner, all players)
+    fn build_pick_order(&self, winner_idx: u8) -> Vec<u8> {
+        (0..self.players.len() as u8)
+            .filter(|&i| i != winner_idx)
+            .collect()
+    }
+
+    /// Enter card pick phase for the first loser
+    fn enter_card_pick(&mut self, winner_idx: u8) {
+        let mut pick_order = self.build_pick_order(winner_idx);
+        if pick_order.is_empty() {
+            self.reset_round();
+            return;
+        }
+        let current_picker = pick_order.remove(0);
+        let mut seed = self.rng.next();
+        let offered = cards::random_cards(&mut seed, 3);
+        self.state = GameState::CardPick {
+            winner_index: winner_idx,
+            current_picker,
+            offered_cards: [
+                *offered.get(0).unwrap_or(&0),
+                *offered.get(1).unwrap_or(&1),
+                *offered.get(2).unwrap_or(&2),
+            ],
+            pick_order,
+            phase_timer: CARD_ENTRANCE_DURATION,
+            chosen_card: None,
+            exit_timer: 0.0,
+        };
+    }
+
+    /// Process a card choice from a player (called by server)
+    pub fn process_card_choice(&mut self, player_index: u8, card_slot: u8) {
+        if let GameState::CardPick { current_picker, chosen_card, .. } = &mut self.state {
+            if player_index == *current_picker && chosen_card.is_none() && card_slot < 3 {
+                *chosen_card = Some(card_slot);
+            }
         }
     }
 
@@ -160,6 +214,21 @@ impl World {
 
     pub fn server_update(&mut self, inputs: &[PlayerInput], dt: f32) -> Vec<GameEvent> {
         let mut events = Vec::new();
+
+        // Store cursor positions from inputs
+        for (i, inp) in inputs.iter().enumerate() {
+            if i < self.cursor_positions.len() {
+                self.cursor_positions[i] = (inp.cursor_x, inp.cursor_y);
+            }
+        }
+
+        // Read hover_card from the current picker's input
+        if let GameState::CardPick { current_picker, .. } = &self.state {
+            let pi = *current_picker as usize;
+            self.card_hover = inputs.get(pi).map(|inp| inp.hover_card).unwrap_or(0xFF);
+        } else {
+            self.card_hover = 0xFF;
+        }
 
         match &self.state {
             GameState::RoundStart { timer } => {
@@ -173,21 +242,30 @@ impl World {
             GameState::Playing => {
                 self.server_update_playing(inputs, dt, &mut events);
             }
-            GameState::RoundEnd { timer, .. } => {
+            GameState::RoundEnd { winner_index, timer, .. } => {
+                let wi = *winner_index;
                 let timer = *timer;
                 let slow_dt = dt * SLOW_MO_FACTOR;
 
                 // Winner can still move during slow-mo
-                if let Some(winner_idx) = self.last_alive() {
-                    if let Some(inp) = inputs.get(winner_idx) {
-                        movement::update(&mut self.players[winner_idx], inp, &self.level.platforms, slow_dt);
-                        self.players[winner_idx].aim_dir = inp.aim_dir;
+                if let Some(inp) = inputs.get(wi as usize) {
+                    if (wi as usize) < self.players.len() && self.players[wi as usize].alive {
+                        movement::update(&mut self.players[wi as usize], inp, &self.level.platforms, slow_dt);
+                        self.players[wi as usize].aim_dir = inp.aim_dir;
                     }
                 }
 
                 let new_timer = timer - dt;
                 if new_timer <= 0.0 {
-                    self.reset_round();
+                    // Check if anyone has won the match
+                    if self.scores.get(wi as usize).copied().unwrap_or(0) >= WINS_TO_MATCH {
+                        self.state = GameState::MatchOver {
+                            winner_index: wi,
+                            timer: MATCH_OVER_DURATION,
+                        };
+                    } else {
+                        self.enter_card_pick(wi);
+                    }
                 } else {
                     let name = if let GameState::RoundEnd { winner_name, .. } = &self.state {
                         winner_name.clone()
@@ -195,12 +273,79 @@ impl World {
                     let color = if let GameState::RoundEnd { winner_color, .. } = &self.state {
                         *winner_color
                     } else { (255, 255, 255) };
-                    self.state = GameState::RoundEnd { winner_name: name, winner_color: color, timer: new_timer };
+                    self.state = GameState::RoundEnd { winner_index: wi, winner_name: name, winner_color: color, timer: new_timer };
+                }
+            }
+            GameState::CardPick { .. } => {
+                self.server_update_card_pick(dt);
+            }
+            GameState::MatchOver { timer, winner_index, .. } => {
+                let new_timer = *timer - dt;
+                let wi = *winner_index;
+                if new_timer <= 0.0 {
+                    // Match over — stay in this state until Escape (handled by main loop)
+                    self.state = GameState::MatchOver { winner_index: wi, timer: 0.0 };
+                } else {
+                    self.state = GameState::MatchOver { winner_index: wi, timer: new_timer };
                 }
             }
         }
 
         events
+    }
+
+    fn server_update_card_pick(&mut self, dt: f32) {
+        // Extract state to avoid borrow issues
+        let (winner_index, current_picker, offered_cards, pick_order, phase_timer, chosen_card, exit_timer) =
+            if let GameState::CardPick {
+                winner_index, current_picker, offered_cards, pick_order, phase_timer, chosen_card, exit_timer,
+            } = &self.state {
+                (*winner_index, *current_picker, *offered_cards, pick_order.clone(), *phase_timer, *chosen_card, *exit_timer)
+            } else {
+                return;
+            };
+
+        if chosen_card.is_some() {
+            // Card was chosen — tick exit timer
+            let new_exit = exit_timer + dt;
+            if new_exit >= CARD_EXIT_DURATION {
+                // Store the buff (future use) — advance to next picker or round
+                if pick_order.is_empty() {
+                    self.reset_round();
+                } else {
+                    let next_picker = pick_order[0];
+                    let mut remaining = pick_order.clone();
+                    remaining.remove(0);
+                    let mut seed = self.rng.next();
+                    let new_offered = cards::random_cards(&mut seed, 3);
+                    self.state = GameState::CardPick {
+                        winner_index,
+                        current_picker: next_picker,
+                        offered_cards: [
+                            *new_offered.get(0).unwrap_or(&0),
+                            *new_offered.get(1).unwrap_or(&1),
+                            *new_offered.get(2).unwrap_or(&2),
+                        ],
+                        pick_order: remaining,
+                        phase_timer: CARD_ENTRANCE_DURATION,
+                        chosen_card: None,
+                        exit_timer: 0.0,
+                    };
+                }
+            } else {
+                self.state = GameState::CardPick {
+                    winner_index, current_picker, offered_cards, pick_order,
+                    phase_timer, chosen_card, exit_timer: new_exit,
+                };
+            }
+        } else {
+            // Entrance / waiting for pick
+            let new_phase = (phase_timer - dt).max(0.0);
+            self.state = GameState::CardPick {
+                winner_index, current_picker, offered_cards, pick_order,
+                phase_timer: new_phase, chosen_card, exit_timer,
+            };
+        }
     }
 
     fn server_update_playing(&mut self, inputs: &[PlayerInput], dt: f32, events: &mut Vec<GameEvent>) {
@@ -271,6 +416,7 @@ impl World {
                 let c = self.players[winner_idx].color;
                 self.scores[winner_idx] += 1;
                 self.state = GameState::RoundEnd {
+                    winner_index: winner_idx as u8,
                     winner_name: name,
                     winner_color: (c.r, c.g, c.b),
                     timer: ROUND_END_DURATION,
@@ -288,21 +434,28 @@ impl World {
             GameState::RoundStart { timer } => (0, *timer, 0.0),
             GameState::Playing => (1, 0.0, 1.0),
             GameState::RoundEnd { timer, .. } => (2, *timer, SLOW_MO_FACTOR),
+            GameState::CardPick { .. } => (3, 0.0, 0.0),
+            GameState::MatchOver { timer, .. } => (4, *timer, 0.0),
         };
 
-        let players: Vec<PlayerSnapshot> = self.players.iter().map(|p| PlayerSnapshot {
-            pos_x: p.position.x,
-            pos_y: p.position.y,
-            vel_x: p.velocity.x,
-            vel_y: p.velocity.y,
-            aim_x: p.aim_dir.x,
-            aim_y: p.aim_dir.y,
-            hp: p.hp,
-            hit_flash: p.hit_flash_timer,
-            reload_timer: p.reload_timer,
-            shoot_cooldown: p.shoot_cooldown,
-            bullets_remaining: p.bullets_remaining as i8,
-            alive: p.alive,
+        let players: Vec<PlayerSnapshot> = self.players.iter().enumerate().map(|(i, p)| {
+            let (cx, cy) = self.cursor_positions.get(i).copied().unwrap_or((0.5, 0.5));
+            PlayerSnapshot {
+                pos_x: p.position.x,
+                pos_y: p.position.y,
+                vel_x: p.velocity.x,
+                vel_y: p.velocity.y,
+                aim_x: p.aim_dir.x,
+                aim_y: p.aim_dir.y,
+                hp: p.hp,
+                hit_flash: p.hit_flash_timer,
+                reload_timer: p.reload_timer,
+                shoot_cooldown: p.shoot_cooldown,
+                bullets_remaining: p.bullets_remaining as i8,
+                alive: p.alive,
+                cursor_x: cx,
+                cursor_y: cy,
+            }
         }).collect();
 
         let bullets: Vec<BulletSnapshot> = self.bullets.iter().map(|b| BulletSnapshot {
@@ -318,6 +471,22 @@ impl World {
             lifetime: b.lifetime,
         }).collect();
 
+        // Card pick fields
+        let (card_current_picker, card_offered, card_remaining_pickers, card_phase_timer, card_chosen, card_exit_timer, card_hover) =
+            if let GameState::CardPick { current_picker, offered_cards, pick_order, phase_timer, chosen_card, exit_timer, .. } = &self.state {
+                (*current_picker, *offered_cards, pick_order.len() as u8, *phase_timer,
+                 chosen_card.unwrap_or(0xFF), *exit_timer, self.card_hover)
+            } else {
+                (0, [0, 0, 0], 0, 0.0, 0xFF, 0.0, 0xFF)
+            };
+
+        // MatchOver fields
+        let (match_winner, match_timer) = if let GameState::MatchOver { winner_index, timer } = &self.state {
+            (*winner_index, *timer)
+        } else {
+            (0, 0.0)
+        };
+
         WorldSnapshot {
             state_tag,
             state_timer,
@@ -329,6 +498,15 @@ impl World {
             scores: self.scores.clone(),
             bullets,
             events,
+            card_current_picker,
+            card_offered,
+            card_remaining_pickers,
+            card_phase_timer,
+            card_chosen,
+            card_exit_timer,
+            card_hover,
+            match_winner,
+            match_timer,
         }
     }
 
@@ -344,6 +522,7 @@ impl World {
         let names: Vec<String> = self.players.iter().map(|p| p.name.clone()).collect();
         let colors: Vec<Color> = self.players.iter().map(|p| p.color).collect();
         self.state = snap.game_state(&names, &colors);
+        self.card_hover = snap.card_hover;
 
         // Update players
         for (i, ps) in snap.players.iter().enumerate() {
@@ -361,6 +540,10 @@ impl World {
             p.shoot_cooldown = ps.shoot_cooldown;
             p.bullets_remaining = ps.bullets_remaining as i32;
             p.alive = ps.alive;
+            // Update cursor positions
+            if i < self.cursor_positions.len() {
+                self.cursor_positions[i] = (ps.cursor_x, ps.cursor_y);
+            }
         }
 
         // Update scores
@@ -425,20 +608,19 @@ impl World {
             GameState::Playing => {
                 self.update_playing_local(rl, camera, dt);
             }
-            GameState::RoundEnd { timer, .. } => {
+            GameState::RoundEnd { winner_index, timer, .. } => {
+                let wi = *winner_index;
                 let timer = *timer;
                 let slow_dt = dt * SLOW_MO_FACTOR;
 
-                if let Some(winner_idx) = self.last_alive() {
-                    if winner_idx == 0 {
-                        let center = Vector2::new(
-                            self.players[0].position.x,
-                            self.players[0].position.y + self.players[0].size.y / 2.0,
-                        );
-                        let p1_input = input::read_input(rl, camera, center);
-                        movement::update(&mut self.players[0], &p1_input, &self.level.platforms, slow_dt);
-                        self.players[0].aim_dir = p1_input.aim_dir;
-                    }
+                if wi == 0 && self.players[0].alive {
+                    let center = Vector2::new(
+                        self.players[0].position.x,
+                        self.players[0].position.y + self.players[0].size.y / 2.0,
+                    );
+                    let p1_input = input::read_input(rl, camera, center);
+                    movement::update(&mut self.players[0], &p1_input, &self.level.platforms, slow_dt);
+                    self.players[0].aim_dir = p1_input.aim_dir;
                 }
 
                 update_particles(&mut self.particles, slow_dt);
@@ -453,8 +635,11 @@ impl World {
                     let color = if let GameState::RoundEnd { winner_color, .. } = &self.state {
                         *winner_color
                     } else { (255, 255, 255) };
-                    self.state = GameState::RoundEnd { winner_name: name, winner_color: color, timer: new_timer };
+                    self.state = GameState::RoundEnd { winner_index: wi, winner_name: name, winner_color: color, timer: new_timer };
                 }
+            }
+            GameState::CardPick { .. } | GameState::MatchOver { .. } => {
+                // Local mode doesn't use card pick / match over
             }
         }
     }
@@ -531,6 +716,7 @@ impl World {
                 let c = self.players[winner_idx].color;
                 self.scores[winner_idx] += 1;
                 self.state = GameState::RoundEnd {
+                    winner_index: winner_idx as u8,
                     winner_name: name,
                     winner_color: (c.r, c.g, c.b),
                     timer: ROUND_END_DURATION,
@@ -540,4 +726,5 @@ impl World {
             }
         }
     }
+
 }

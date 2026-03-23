@@ -7,6 +7,9 @@ pub struct PlayerInput {
     pub jump_held: bool,
     pub shoot_pressed: bool,
     pub aim_dir: Vector2,
+    pub cursor_x: f32, // normalized 0..1 screen coords
+    pub cursor_y: f32,
+    pub hover_card: u8, // 0-2 = hovering card slot, 0xFF = none
 }
 
 impl PlayerInput {
@@ -17,6 +20,9 @@ impl PlayerInput {
             jump_held: false,
             shoot_pressed: false,
             aim_dir: Vector2::new(1.0, 0.0),
+            cursor_x: 0.5,
+            cursor_y: 0.5,
+            hover_card: 0xFF,
         }
     }
 }
@@ -60,11 +66,20 @@ pub fn read_input(rl: &RaylibHandle, camera: &Camera3D, player_center: Vector2) 
         Vector2::new(1.0, 0.0)
     };
 
+    // Normalized cursor position (0..1)
+    let screen_w = rl.get_screen_width() as f32;
+    let screen_h = rl.get_screen_height() as f32;
+    let cursor_x = if screen_w > 0.0 { (mouse_pos.x / screen_w).clamp(0.0, 1.0) } else { 0.5 };
+    let cursor_y = if screen_h > 0.0 { (mouse_pos.y / screen_h).clamp(0.0, 1.0) } else { 0.5 };
+
     PlayerInput {
         move_dir,
         jump_pressed,
         jump_held,
         shoot_pressed,
         aim_dir,
+        cursor_x,
+        cursor_y,
+        hover_card: 0xFF, // set by game server/client during card pick
     }
 }

@@ -7,6 +7,7 @@ use raylib::prelude::*;
 
 use crate::combat::particles::{spawn_death_explosion, spawn_player_hit, spawn_terrain_hit, update_particles};
 use crate::game::net::{self, GameEvent, WorldSnapshot};
+use crate::game::state::GameState;
 use crate::game::world::World;
 use crate::lobby::protocol::ClientIncoming;
 use crate::lobby::server::{GameServerParts, ServerEvent};
@@ -57,7 +58,7 @@ impl GameServer {
 
     pub fn update(&mut self, rl: &RaylibHandle, camera: &Camera3D, dt: f32) {
         // 1. Read host input (player 0)
-        if self.world.players[0].alive || !matches!(self.world.state, crate::game::state::GameState::Playing) {
+        if self.world.players[0].alive || !matches!(self.world.state, GameState::Playing) {
             let center = Vector2::new(
                 self.world.players[0].position.x,
                 self.world.players[0].position.y + self.world.players[0].size.y / 2.0,
@@ -70,19 +71,31 @@ impl GameServer {
         for event in events {
             match event {
                 ServerEvent::ClientMessage(cid, incoming) => {
-                    if let ClientIncoming::GameInput(new_input) = incoming {
-                        if let Some(&Some(slot)) = self.client_slot_map.get(cid) {
-                            if slot < self.inputs.len() {
-                                // OR-accumulate one-shot inputs
-                                self.inputs[slot].move_dir = new_input.move_dir;
-                                self.inputs[slot].aim_dir = new_input.aim_dir;
-                                self.inputs[slot].jump_held = new_input.jump_held;
-                                self.inputs[slot].jump_pressed |= new_input.jump_pressed;
-                                self.inputs[slot].shoot_pressed |= new_input.shoot_pressed;
+                    match incoming {
+                        ClientIncoming::GameInput(new_input) => {
+                            if let Some(&Some(slot)) = self.client_slot_map.get(cid) {
+                                if slot < self.inputs.len() {
+                                    // OR-accumulate one-shot inputs
+                                    self.inputs[slot].move_dir = new_input.move_dir;
+                                    self.inputs[slot].aim_dir = new_input.aim_dir;
+                                    self.inputs[slot].jump_held = new_input.jump_held;
+                                    self.inputs[slot].jump_pressed |= new_input.jump_pressed;
+                                    self.inputs[slot].shoot_pressed |= new_input.shoot_pressed;
+                                    self.inputs[slot].cursor_x = new_input.cursor_x;
+                                    self.inputs[slot].cursor_y = new_input.cursor_y;
+                                    self.inputs[slot].hover_card = new_input.hover_card;
+                                }
                             }
                         }
+                        ClientIncoming::CardChoice(card_slot) => {
+                            if let Some(&Some(slot)) = self.client_slot_map.get(cid) {
+                                self.world.process_card_choice(slot as u8, card_slot);
+                            }
+                        }
+                        ClientIncoming::Lobby(_) => {
+                            // Ignore lobby messages during game
+                        }
                     }
-                    // Ignore lobby messages during game
                 }
                 ServerEvent::ClientDisconnected(_cid) => {
                     // Player disconnected — could handle later
@@ -93,8 +106,36 @@ impl GameServer {
             }
         }
 
+        // Host card pick: detect hover + click on cards during CardPick state
+        let mut host_hover = 0xFFu8;
+        if let GameState::CardPick { current_picker, chosen_card, phase_timer, .. } = &self.world.state {
+            if *current_picker == 0 {
+                let mouse = rl.get_mouse_position();
+                let sw = rl.get_screen_width() as f32;
+                let sh = rl.get_screen_height() as f32;
+
+                if chosen_card.is_none() && *phase_timer <= 0.0 {
+                    host_hover = card_slot_from_mouse(mouse, sw, sh).unwrap_or(0xFF);
+                    self.inputs[0].hover_card = host_hover;
+
+                    if rl.is_mouse_button_pressed(MouseButton::MOUSE_BUTTON_LEFT) {
+                        if let Some(slot) = card_slot_from_mouse(mouse, sw, sh) {
+                            self.world.process_card_choice(0, slot);
+                        }
+                    }
+                } else {
+                    self.inputs[0].hover_card = 0xFF;
+                }
+            }
+        }
+
         // 3. Run physics every frame for smooth host rendering
         let game_events = self.world.server_update(&self.inputs, dt);
+
+        // Override card_hover after server_update for immediate local rendering
+        if host_hover != 0xFF {
+            self.world.card_hover = host_hover;
+        }
 
         // Spawn particles locally on host from events
         for ev in &game_events {
@@ -150,4 +191,22 @@ impl Drop for GameServer {
     fn drop(&mut self) {
         self.shutdown.store(true, Ordering::Relaxed);
     }
+}
+
+/// Check if mouse click lands on one of the 3 card rects. Returns card slot 0-2.
+fn card_slot_from_mouse(mouse: Vector2, screen_w: f32, screen_h: f32) -> Option<u8> {
+    let card_w: f32 = 180.0;
+    let card_h: f32 = 250.0;
+    let gap: f32 = 40.0;
+    let total_w = 3.0 * card_w + 2.0 * gap;
+    let start_x = (screen_w - total_w) / 2.0;
+    let card_y = screen_h * 0.35;
+
+    for i in 0..3u8 {
+        let cx = start_x + i as f32 * (card_w + gap);
+        if mouse.x >= cx && mouse.x <= cx + card_w && mouse.y >= card_y && mouse.y <= card_y + card_h {
+            return Some(i);
+        }
+    }
+    None
 }

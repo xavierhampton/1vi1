@@ -7,9 +7,10 @@ use raylib::prelude::*;
 
 use crate::combat::particles::update_particles;
 use crate::game::net;
+use crate::game::state::GameState;
 use crate::game::world::World;
 use crate::lobby::client::GameClientParts;
-use crate::lobby::protocol::ServerIncoming;
+use crate::lobby::protocol::{self, ServerIncoming};
 use crate::player::input;
 
 pub struct GameClient {
@@ -45,12 +46,37 @@ impl GameClient {
         let my_idx = self.my_index as usize;
 
         // 1. Read local input and send to server
+        let mut local_hover = 0xFFu8;
         if my_idx < self.world.players.len() {
             let center = Vector2::new(
                 self.world.players[my_idx].position.x,
                 self.world.players[my_idx].position.y + self.world.players[my_idx].size.y / 2.0,
             );
-            let local_input = input::read_input(rl, camera, center);
+            let mut local_input = input::read_input(rl, camera, center);
+            // Store own cursor locally so it's not lagged by network round-trip
+            if my_idx < self.world.cursor_positions.len() {
+                self.world.cursor_positions[my_idx] = (local_input.cursor_x, local_input.cursor_y);
+            }
+
+            // Compute hover_card if we're the current picker
+            if let GameState::CardPick { current_picker, chosen_card, phase_timer, .. } = &self.world.state {
+                if *current_picker == self.my_index && chosen_card.is_none() && *phase_timer <= 0.0 {
+                    let mouse = rl.get_mouse_position();
+                    let sw = rl.get_screen_width() as f32;
+                    let sh = rl.get_screen_height() as f32;
+                    let hover = card_slot_from_mouse(mouse, sw, sh).unwrap_or(0xFF);
+                    local_input.hover_card = hover;
+                    local_hover = hover;
+
+                    if rl.is_mouse_button_pressed(MouseButton::MOUSE_BUTTON_LEFT) {
+                        if let Some(slot) = card_slot_from_mouse(mouse, sw, sh) {
+                            let data = protocol::encode_card_choice(slot);
+                            let _ = self.write_stream.write_all(&data);
+                        }
+                    }
+                }
+            }
+
             let data = net::encode_game_input(&local_input);
             let _ = self.write_stream.write_all(&data);
         }
@@ -76,7 +102,12 @@ impl GameClient {
             got_snapshot = true;
         }
 
-        // 3. Extrapolate positions between snapshots for smooth rendering
+        // 3. If we're the picker, override card_hover AFTER snapshot to avoid stale overwrite
+        if local_hover != 0xFF {
+            self.world.card_hover = local_hover;
+        }
+
+        // 4. Extrapolate positions between snapshots for smooth rendering
         if !got_snapshot {
             self.time_since_snap += dt;
             // Cap extrapolation to avoid overshooting
@@ -89,7 +120,7 @@ impl GameClient {
             }
         }
 
-        // 4. Update particles locally (client-side cosmetic only)
+        // 5. Update particles locally (client-side cosmetic only)
         update_particles(&mut self.world.particles, dt);
     }
 }
@@ -98,4 +129,22 @@ impl Drop for GameClient {
     fn drop(&mut self) {
         self.shutdown.store(true, Ordering::Relaxed);
     }
+}
+
+/// Check if mouse click lands on one of the 3 card rects. Returns card slot 0-2.
+fn card_slot_from_mouse(mouse: Vector2, screen_w: f32, screen_h: f32) -> Option<u8> {
+    let card_w: f32 = 180.0;
+    let card_h: f32 = 250.0;
+    let gap: f32 = 40.0;
+    let total_w = 3.0 * card_w + 2.0 * gap;
+    let start_x = (screen_w - total_w) / 2.0;
+    let card_y = screen_h * 0.35;
+
+    for i in 0..3u8 {
+        let cx = start_x + i as f32 * (card_w + gap);
+        if mouse.x >= cx && mouse.x <= cx + card_w && mouse.y >= card_y && mouse.y <= card_y + card_h {
+            return Some(i);
+        }
+    }
+    None
 }

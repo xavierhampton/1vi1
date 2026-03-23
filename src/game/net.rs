@@ -29,6 +29,8 @@ pub struct PlayerSnapshot {
     pub shoot_cooldown: f32,
     pub bullets_remaining: i8,
     pub alive: bool,
+    pub cursor_x: f32,
+    pub cursor_y: f32,
 }
 
 #[derive(Debug, Clone)]
@@ -47,7 +49,7 @@ pub struct BulletSnapshot {
 
 #[derive(Debug, Clone)]
 pub struct WorldSnapshot {
-    pub state_tag: u8, // 0=RoundStart, 1=Playing, 2=RoundEnd
+    pub state_tag: u8, // 0=RoundStart, 1=Playing, 2=RoundEnd, 3=CardPick, 4=MatchOver
     pub state_timer: f32,
     pub time_scale: f32, // 1.0 normal, 0.25 slow-mo, 0.0 frozen
     pub level_id: u8,
@@ -57,12 +59,23 @@ pub struct WorldSnapshot {
     pub scores: Vec<i32>,
     pub bullets: Vec<BulletSnapshot>,
     pub events: Vec<GameEvent>,
+    // Card pick fields (only meaningful when state_tag == 3)
+    pub card_current_picker: u8,
+    pub card_offered: [u8; 3],
+    pub card_remaining_pickers: u8,
+    pub card_phase_timer: f32,
+    pub card_chosen: u8,      // 0xFF = none
+    pub card_exit_timer: f32,
+    pub card_hover: u8,       // 0xFF = none, 0-2 = picker is hovering this card
+    // MatchOver fields (only meaningful when state_tag == 4)
+    pub match_winner: u8,
+    pub match_timer: f32,
 }
 
 // ── Encode/decode GameInput ──────────────────────────────────────────────────
 
 pub fn encode_game_input(input: &PlayerInput) -> Vec<u8> {
-    let mut payload = Vec::with_capacity(15);
+    let mut payload = Vec::with_capacity(24);
     payload.push(0x10);
     payload.extend_from_slice(&input.move_dir.to_le_bytes());
     let flags: u8 = (input.jump_pressed as u8)
@@ -71,6 +84,9 @@ pub fn encode_game_input(input: &PlayerInput) -> Vec<u8> {
     payload.push(flags);
     payload.extend_from_slice(&input.aim_dir.x.to_le_bytes());
     payload.extend_from_slice(&input.aim_dir.y.to_le_bytes());
+    payload.extend_from_slice(&input.cursor_x.to_le_bytes());
+    payload.extend_from_slice(&input.cursor_y.to_le_bytes());
+    payload.push(input.hover_card);
 
     let len = payload.len() as u16;
     let mut out = Vec::with_capacity(2 + payload.len());
@@ -80,20 +96,32 @@ pub fn encode_game_input(input: &PlayerInput) -> Vec<u8> {
 }
 
 pub fn decode_game_input(data: &[u8]) -> Option<PlayerInput> {
-    // data starts after the type byte, so it should be 12 bytes
-    if data.len() < 12 {
+    // data starts after the type byte: 4(move) + 1(flags) + 8(aim) + 8(cursor) = 21 bytes
+    // Accept old 13-byte format too for backwards compat
+    if data.len() < 13 {
         return None;
     }
     let move_dir = f32::from_le_bytes([data[0], data[1], data[2], data[3]]);
     let flags = data[4];
     let aim_x = f32::from_le_bytes([data[5], data[6], data[7], data[8]]);
     let aim_y = f32::from_le_bytes([data[9], data[10], data[11], data[12]]);
+    let (cursor_x, cursor_y) = if data.len() >= 21 {
+        let cx = f32::from_le_bytes([data[13], data[14], data[15], data[16]]);
+        let cy = f32::from_le_bytes([data[17], data[18], data[19], data[20]]);
+        (cx, cy)
+    } else {
+        (0.5, 0.5)
+    };
+    let hover_card = if data.len() >= 22 { data[21] } else { 0xFF };
     Some(PlayerInput {
         move_dir,
         jump_pressed: flags & 1 != 0,
         jump_held: flags & 2 != 0,
         shoot_pressed: flags & 4 != 0,
         aim_dir: Vector2::new(aim_x, aim_y),
+        cursor_x,
+        cursor_y,
+        hover_card,
     })
 }
 
@@ -151,6 +179,8 @@ pub fn encode_snapshot(snap: &WorldSnapshot) -> Vec<u8> {
         push_f32(&mut payload, p.shoot_cooldown);
         payload.push(p.bullets_remaining as u8);
         payload.push(p.alive as u8);
+        push_f32(&mut payload, p.cursor_x);
+        push_f32(&mut payload, p.cursor_y);
     }
 
     // Scores
@@ -211,6 +241,21 @@ pub fn encode_snapshot(snap: &WorldSnapshot) -> Vec<u8> {
         }
     }
 
+    // Card pick fields (always written for simplicity; only meaningful when state_tag==3)
+    payload.push(snap.card_current_picker);
+    payload.push(snap.card_offered[0]);
+    payload.push(snap.card_offered[1]);
+    payload.push(snap.card_offered[2]);
+    payload.push(snap.card_remaining_pickers);
+    push_f32(&mut payload, snap.card_phase_timer);
+    payload.push(snap.card_chosen);
+    push_f32(&mut payload, snap.card_exit_timer);
+    payload.push(snap.card_hover);
+
+    // MatchOver fields
+    payload.push(snap.match_winner);
+    push_f32(&mut payload, snap.match_timer);
+
     let len = payload.len() as u16;
     let mut out = Vec::with_capacity(2 + payload.len());
     out.extend_from_slice(&len.to_be_bytes());
@@ -234,7 +279,7 @@ pub fn decode_snapshot(data: &[u8]) -> Option<WorldSnapshot> {
     let player_count = read_u8(data, &mut pos);
     let mut players = Vec::with_capacity(player_count as usize);
     for _ in 0..player_count {
-        if pos + 42 > data.len() { return None; }
+        if pos + 50 > data.len() { return None; }
         players.push(PlayerSnapshot {
             pos_x: read_f32(data, &mut pos),
             pos_y: read_f32(data, &mut pos),
@@ -248,6 +293,8 @@ pub fn decode_snapshot(data: &[u8]) -> Option<WorldSnapshot> {
             shoot_cooldown: read_f32(data, &mut pos),
             bullets_remaining: read_u8(data, &mut pos) as i8,
             alive: read_u8(data, &mut pos) != 0,
+            cursor_x: read_f32(data, &mut pos),
+            cursor_y: read_f32(data, &mut pos),
         });
     }
 
@@ -314,6 +361,32 @@ pub fn decode_snapshot(data: &[u8]) -> Option<WorldSnapshot> {
         }
     }
 
+    // Card pick fields
+    let (card_current_picker, card_offered, card_remaining_pickers, card_phase_timer, card_chosen, card_exit_timer, card_hover) =
+        if pos + 15 <= data.len() {
+            let picker = read_u8(data, &mut pos);
+            let c0 = read_u8(data, &mut pos);
+            let c1 = read_u8(data, &mut pos);
+            let c2 = read_u8(data, &mut pos);
+            let remaining = read_u8(data, &mut pos);
+            let phase = read_f32(data, &mut pos);
+            let chosen = read_u8(data, &mut pos);
+            let exit = read_f32(data, &mut pos);
+            let hover = read_u8(data, &mut pos);
+            (picker, [c0, c1, c2], remaining, phase, chosen, exit, hover)
+        } else {
+            (0, [0, 0, 0], 0, 0.0, 0xFF, 0.0, 0xFF)
+        };
+
+    // MatchOver fields
+    let (match_winner, match_timer) = if pos + 5 <= data.len() {
+        let w = read_u8(data, &mut pos);
+        let t = read_f32(data, &mut pos);
+        (w, t)
+    } else {
+        (0, 0.0)
+    };
+
     Some(WorldSnapshot {
         state_tag,
         state_timer,
@@ -325,6 +398,15 @@ pub fn decode_snapshot(data: &[u8]) -> Option<WorldSnapshot> {
         scores,
         bullets,
         events,
+        card_current_picker,
+        card_offered,
+        card_remaining_pickers,
+        card_phase_timer,
+        card_chosen,
+        card_exit_timer,
+        card_hover,
+        match_winner,
+        match_timer,
     })
 }
 
@@ -339,11 +421,25 @@ impl WorldSnapshot {
                 let name = names.get(wi).cloned().unwrap_or_default();
                 let c = colors.get(wi).copied().unwrap_or(Color::WHITE);
                 GameState::RoundEnd {
+                    winner_index: self.winner_index,
                     winner_name: name,
                     winner_color: (c.r, c.g, c.b),
                     timer: self.state_timer,
                 }
             }
+            3 => GameState::CardPick {
+                winner_index: self.winner_index,
+                current_picker: self.card_current_picker,
+                offered_cards: self.card_offered,
+                pick_order: Vec::new(), // client doesn't need the full queue
+                phase_timer: self.card_phase_timer,
+                chosen_card: if self.card_chosen == 0xFF { None } else { Some(self.card_chosen) },
+                exit_timer: self.card_exit_timer,
+            },
+            4 => GameState::MatchOver {
+                winner_index: self.match_winner,
+                timer: self.match_timer,
+            },
             _ => GameState::Playing,
         }
     }

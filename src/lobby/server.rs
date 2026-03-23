@@ -96,7 +96,7 @@ impl LobbyServer {
                 ServerEvent::ClientMessage(id, incoming) => {
                     let msg = match incoming {
                         ClientIncoming::Lobby(m) => m,
-                        ClientIncoming::GameInput(_) => continue, // ignore during lobby
+                        ClientIncoming::GameInput(_) | ClientIncoming::CardChoice(_) => continue, // ignore during lobby
                     };
                     match msg {
                         ClientMsg::Join { name } => {
