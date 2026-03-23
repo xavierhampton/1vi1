@@ -251,11 +251,20 @@ pub fn draw_card_pick(
         let glyph_color = Color::new(cr, cg, cb, alpha);
         d.draw_text(&glyph, glyph_x, glyph_y, glyph_size, glyph_color);
 
+        // Card type tag
+        let tag = if card_def.is_ability() { "[ABILITY]" } else { "[POWERUP]" };
+        let tag_size = (13.0 * scale) as i32;
+        let tag_w = d.measure_text(tag, tag_size);
+        let tag_x = draw_x as i32 + scaled_w as i32 / 2 - tag_w / 2;
+        let tag_y = (draw_y + scaled_h * 0.50) as i32;
+        let tag_color = Color::new(cr / 2 + 80, cg / 2 + 80, cb / 2 + 80, alpha);
+        d.draw_text(tag, tag_x, tag_y, tag_size, tag_color);
+
         // Card name
         let name_size = (22.0 * scale) as i32;
         let name_w = d.measure_text(card_def.name, name_size);
         let name_x = draw_x as i32 + scaled_w as i32 / 2 - name_w / 2;
-        let name_y = (draw_y + scaled_h * 0.55) as i32;
+        let name_y = (draw_y + scaled_h * 0.57) as i32;
         let name_color = Color::new(240, 240, 240, alpha);
         d.draw_text(card_def.name, name_x, name_y, name_size, name_color);
 
@@ -263,7 +272,7 @@ pub fn draw_card_pick(
         let desc_size = (16.0 * scale) as i32;
         let desc_w = d.measure_text(card_def.description, desc_size);
         let desc_x = draw_x as i32 + scaled_w as i32 / 2 - desc_w / 2;
-        let desc_y = (draw_y + scaled_h * 0.68) as i32;
+        let desc_y = (draw_y + scaled_h * 0.70) as i32;
         let desc_color = Color::new(180, 180, 180, alpha);
         d.draw_text(card_def.description, desc_x, desc_y, desc_size, desc_color);
 

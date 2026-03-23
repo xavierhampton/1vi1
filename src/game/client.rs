@@ -5,6 +5,7 @@ use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
 
 use raylib::prelude::*;
 
+use crate::combat::bullet::BULLET_GRAVITY;
 use crate::combat::particles::update_particles;
 use crate::game::net;
 use crate::game::state::GameState;
@@ -20,9 +21,10 @@ pub struct GameClient {
     incoming_rx: Receiver<ServerIncoming>,
     shutdown: Arc<AtomicBool>,
     pub my_index: u8,
-    // Extrapolation: track base positions from last snapshot + time since
+    // Extrapolation: track base state from last snapshot + time since
     snap_positions: Vec<(Vector3, Vector3)>, // (base_pos, velocity) per player
-    snap_aim: Vec<Vector2>, // target aim_dir per player (from snapshot)
+    snap_aim: Vec<Vector2>,                  // target aim_dir per player
+    snap_bullets: Vec<(Vector3, Vector2)>,   // (base_pos, velocity) per bullet
     time_since_snap: f32,
     time_scale: f32, // from server: 1.0 normal, 0.25 slow-mo, 0.0 frozen
 }
@@ -35,6 +37,9 @@ impl GameClient {
         let snap_aim = world.players.iter()
             .map(|p| p.aim_dir)
             .collect();
+        let snap_bullets = world.bullets.iter()
+            .map(|b| (b.position, b.velocity))
+            .collect();
         Self {
             world,
             write_stream: parts.write_stream,
@@ -43,6 +48,7 @@ impl GameClient {
             my_index: parts.my_index,
             snap_positions,
             snap_aim,
+            snap_bullets,
             time_since_snap: 0.0,
             time_scale: 1.0,
         }
@@ -106,6 +112,10 @@ impl GameClient {
                 self.snap_positions.push((p.position, p.velocity));
                 self.snap_aim.push(p.aim_dir);
             }
+            self.snap_bullets.clear();
+            for b in &self.world.bullets {
+                self.snap_bullets.push((b.position, b.velocity));
+            }
             self.time_since_snap = 0.0;
             got_snapshot = true;
         }
@@ -133,6 +143,13 @@ impl GameClient {
                 if i < self.world.players.len() {
                     self.world.players[i].position.x = base_pos.x + vel.x * t;
                     self.world.players[i].position.y = base_pos.y + vel.y * t;
+                }
+            }
+            // Extrapolate bullet positions with gravity
+            for (i, (base_pos, vel)) in self.snap_bullets.iter().enumerate() {
+                if i < self.world.bullets.len() {
+                    self.world.bullets[i].position.x = base_pos.x + vel.x * t;
+                    self.world.bullets[i].position.y = base_pos.y + (vel.y - BULLET_GRAVITY * t) * t;
                 }
             }
         }
