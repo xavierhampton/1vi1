@@ -1,14 +1,27 @@
 use raylib::prelude::*;
 
+#[derive(Debug, Clone)]
 pub struct PlayerInput {
     pub move_dir: f32,
     pub jump_pressed: bool,
     pub jump_held: bool,
     pub shoot_pressed: bool,
-    pub aim_target: Vector2,
+    pub aim_dir: Vector2,
 }
 
-pub fn read_input(rl: &RaylibHandle, camera: &Camera3D) -> PlayerInput {
+impl PlayerInput {
+    pub fn empty() -> Self {
+        Self {
+            move_dir: 0.0,
+            jump_pressed: false,
+            jump_held: false,
+            shoot_pressed: false,
+            aim_dir: Vector2::new(1.0, 0.0),
+        }
+    }
+}
+
+pub fn read_input(rl: &RaylibHandle, camera: &Camera3D, player_center: Vector2) -> PlayerInput {
     let mut move_dir = 0.0;
     if rl.is_key_down(KeyboardKey::KEY_A) {
         move_dir -= 1.0;
@@ -34,7 +47,17 @@ pub fn read_input(rl: &RaylibHandle, camera: &Camera3D) -> PlayerInput {
             ray.position.y + t * ray.direction.y,
         )
     } else {
-        Vector2::new(0.0, 0.0)
+        Vector2::new(player_center.x + 1.0, player_center.y)
+    };
+
+    // Compute normalized aim direction
+    let dx = aim_target.x - player_center.x;
+    let dy = aim_target.y - player_center.y;
+    let len = (dx * dx + dy * dy).sqrt();
+    let aim_dir = if len > 0.001 {
+        Vector2::new(dx / len, dy / len)
+    } else {
+        Vector2::new(1.0, 0.0)
     };
 
     PlayerInput {
@@ -42,6 +65,6 @@ pub fn read_input(rl: &RaylibHandle, camera: &Camera3D) -> PlayerInput {
         jump_pressed,
         jump_held,
         shoot_pressed,
-        aim_target,
+        aim_dir,
     }
 }

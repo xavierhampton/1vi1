@@ -1,5 +1,5 @@
 use crate::combat::bullet::{Bullet, BULLET_DAMAGE, BULLET_GRAVITY};
-use crate::combat::particles::{spawn_player_hit, spawn_terrain_hit, Particle, Rng};
+use crate::game::net::GameEvent;
 use crate::level::platforms::Platform;
 use crate::player::player::{Player, HIT_FLASH_DURATION};
 
@@ -7,10 +7,10 @@ pub fn update_bullets(
     bullets: &mut Vec<Bullet>,
     players: &mut [Player],
     platforms: &[Platform],
-    particles: &mut Vec<Particle>,
-    rng: &mut Rng,
     dt: f32,
-) {
+) -> Vec<GameEvent> {
+    let mut events = Vec::new();
+
     for bullet in bullets.iter_mut() {
         bullet.prev_position = bullet.position;
 
@@ -28,7 +28,14 @@ pub fn update_bullets(
         // Platform collision
         for platform in platforms {
             if baabb.overlaps(&platform.aabb) {
-                spawn_terrain_hit(particles, rng, bullet.prev_position, bullet.color);
+                events.push(GameEvent::TerrainHit {
+                    x: bullet.prev_position.x,
+                    y: bullet.prev_position.y,
+                    z: bullet.prev_position.z,
+                    r: bullet.color.r,
+                    g: bullet.color.g,
+                    b: bullet.color.b,
+                });
                 bullet.lifetime = 0.0;
                 break;
             }
@@ -45,7 +52,14 @@ pub fn update_bullets(
             }
             if baabb.overlaps(&player.aabb()) {
                 let hit_pos = player.render_center();
-                spawn_player_hit(particles, rng, hit_pos, player.color);
+                events.push(GameEvent::PlayerHit {
+                    x: hit_pos.x,
+                    y: hit_pos.y,
+                    z: hit_pos.z,
+                    r: player.color.r,
+                    g: player.color.g,
+                    b: player.color.b,
+                });
                 player.hit_flash_timer = HIT_FLASH_DURATION;
                 player.hp = (player.hp - BULLET_DAMAGE).max(0.0);
                 bullet.lifetime = 0.0;
@@ -55,4 +69,5 @@ pub fn update_bullets(
     }
 
     bullets.retain(|b| b.lifetime > 0.0);
+    events
 }

@@ -5,7 +5,7 @@ use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
 use std::thread;
 use std::time::Duration;
 
-use crate::lobby::protocol::{self, ClientMsg, ReadBuffer, ServerMsg};
+use crate::lobby::protocol::{self, ClientMsg, ReadBuffer, ServerIncoming, ServerMsg};
 use crate::lobby::state::LobbyState;
 
 pub struct LobbyClient {
@@ -13,9 +13,9 @@ pub struct LobbyClient {
     pub my_index: u8,
     pub rejected: bool,
     pub game_starting: bool,
-    write_stream: TcpStream,
-    incoming_rx: Receiver<ServerMsg>,
-    shutdown: Arc<AtomicBool>,
+    pub(crate) write_stream: Option<TcpStream>,
+    pub(crate) incoming_rx: Option<Receiver<ServerIncoming>>,
+    pub(crate) shutdown: Arc<AtomicBool>,
     _reader_handle: thread::JoinHandle<()>,
 }
 
@@ -25,6 +25,7 @@ impl LobbyClient {
             &addr.parse().map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidInput, e))?,
             Duration::from_secs(3),
         )?;
+        let _ = stream.set_nodelay(true);
 
         let write_stream = stream.try_clone()?;
         let shutdown = Arc::new(AtomicBool::new(false));
@@ -40,8 +41,8 @@ impl LobbyClient {
             my_index: 0,
             rejected: false,
             game_starting: false,
-            write_stream,
-            incoming_rx: rx,
+            write_stream: Some(write_stream),
+            incoming_rx: Some(rx),
             shutdown,
             _reader_handle: reader_handle,
         };
@@ -53,25 +54,34 @@ impl LobbyClient {
     }
 
     pub fn update(&mut self) {
-        while let Ok(msg) = self.incoming_rx.try_recv() {
-            match msg {
-                ServerMsg::LobbySnapshot { my_index, state } => {
-                    self.my_index = my_index;
-                    self.state = state;
-                }
-                ServerMsg::Rejected { .. } => {
-                    self.rejected = true;
-                }
-                ServerMsg::GameStart => {
-                    self.game_starting = true;
-                }
+        let incoming_rx = match &self.incoming_rx {
+            Some(rx) => rx,
+            None => return,
+        };
+        while let Ok(incoming) = incoming_rx.try_recv() {
+            match incoming {
+                ServerIncoming::Lobby(msg) => match msg {
+                    ServerMsg::LobbySnapshot { my_index, state } => {
+                        self.my_index = my_index;
+                        self.state = state;
+                    }
+                    ServerMsg::Rejected { .. } => {
+                        self.rejected = true;
+                    }
+                    ServerMsg::GameStart => {
+                        self.game_starting = true;
+                    }
+                },
+                ServerIncoming::Snapshot(_) => {} // ignore during lobby
             }
         }
     }
 
     pub fn send(&mut self, msg: ClientMsg) {
         let data = protocol::encode_client(&msg);
-        let _ = self.write_stream.write_all(&data);
+        if let Some(stream) = &mut self.write_stream {
+            let _ = stream.write_all(&data);
+        }
     }
 
     pub fn change_color(&mut self, color: u8) {
@@ -81,30 +91,52 @@ impl LobbyClient {
     pub fn toggle_ready(&mut self) {
         self.send(ClientMsg::ToggleReady);
     }
+
+    /// Hand off TCP infrastructure to GameClient. Reader thread keeps running.
+    pub fn into_game_parts(&mut self) -> GameClientParts {
+        GameClientParts {
+            write_stream: self.write_stream.take().unwrap(),
+            incoming_rx: self.incoming_rx.take().unwrap(),
+            shutdown: self.shutdown.clone(),
+            my_index: self.my_index,
+        }
+    }
+}
+
+pub struct GameClientParts {
+    pub write_stream: TcpStream,
+    pub incoming_rx: Receiver<ServerIncoming>,
+    pub shutdown: Arc<AtomicBool>,
+    pub my_index: u8,
 }
 
 impl Drop for LobbyClient {
     fn drop(&mut self) {
-        self.shutdown.store(true, Ordering::Relaxed);
-        let _ = self.write_stream.write_all(&protocol::encode_client(&ClientMsg::Leave));
+        // Only shutdown if we haven't handed off to GameClient
+        if self.incoming_rx.is_some() {
+            self.shutdown.store(true, Ordering::Relaxed);
+        }
+        if let Some(stream) = &mut self.write_stream {
+            let _ = stream.write_all(&protocol::encode_client(&ClientMsg::Leave));
+        }
     }
 }
 
 fn read_server(
     mut stream: TcpStream,
-    tx: mpsc::Sender<ServerMsg>,
+    tx: mpsc::Sender<ServerIncoming>,
     shutdown: Arc<AtomicBool>,
 ) {
     let _ = stream.set_read_timeout(Some(Duration::from_millis(100)));
     let mut read_buf = ReadBuffer::new();
-    let mut tmp = [0u8; 512];
+    let mut tmp = [0u8; 2048];
 
     while !shutdown.load(Ordering::Relaxed) {
         match stream.read(&mut tmp) {
             Ok(0) => break,
             Ok(n) => {
                 read_buf.append(&tmp[..n]);
-                while let Some(msg) = read_buf.try_decode_server() {
+                while let Some(msg) = read_buf.try_decode_server_incoming() {
                     if tx.send(msg).is_err() {
                         return;
                     }

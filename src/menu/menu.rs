@@ -193,7 +193,10 @@ impl Menu {
         if (rl.is_key_down(KeyboardKey::KEY_LEFT_CONTROL) || rl.is_key_down(KeyboardKey::KEY_RIGHT_CONTROL))
             && rl.is_key_pressed(KeyboardKey::KEY_V)
         {
-            if let Ok(text) = rl.get_clipboard_text() {
+            let clip = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                rl.get_clipboard_text()
+            }));
+            if let Ok(Ok(text)) = clip {
                 for c in text.chars() {
                     if (c.is_ascii_digit() || c == '.' || c == ':') && self.ip_input.len() < 21 {
                         self.ip_input.push(c);
@@ -280,7 +283,10 @@ impl Menu {
                 if (rl.is_key_down(KeyboardKey::KEY_LEFT_CONTROL) || rl.is_key_down(KeyboardKey::KEY_RIGHT_CONTROL))
                     && rl.is_key_pressed(KeyboardKey::KEY_V)
                 {
-                    if let Ok(text) = rl.get_clipboard_text() {
+                    let clip = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                        rl.get_clipboard_text()
+                    }));
+                    if let Ok(Ok(text)) = clip {
                         for c in text.chars() {
                             if (c.is_alphanumeric() || c == '_') && self.player_name.len() < 12 {
                                 self.player_name.push(c);

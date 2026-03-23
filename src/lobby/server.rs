@@ -5,11 +5,11 @@ use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
 use std::thread;
 use std::time::Duration;
 
-use crate::lobby::protocol::{self, ClientMsg, ReadBuffer, REJECT_FULL};
+use crate::lobby::protocol::{self, ClientIncoming, ClientMsg, ReadBuffer, REJECT_FULL};
 use crate::lobby::state::{LobbyColor, LobbyState};
 
 pub enum ServerEvent {
-    ClientMessage(usize, ClientMsg),
+    ClientMessage(usize, ClientIncoming),
     ClientConnected(usize, TcpStream),
     ClientDisconnected(usize),
 }
@@ -17,9 +17,9 @@ pub enum ServerEvent {
 pub struct LobbyServer {
     pub state: LobbyState,
     pub my_addr: String,
-    client_streams: Vec<Option<TcpStream>>,
-    event_rx: Receiver<ServerEvent>,
-    shutdown: Arc<AtomicBool>,
+    pub(crate) client_streams: Vec<Option<TcpStream>>,
+    pub(crate) event_rx: Option<Receiver<ServerEvent>>,
+    pub(crate) shutdown: Arc<AtomicBool>,
     _listener_handle: thread::JoinHandle<()>,
 }
 
@@ -40,6 +40,7 @@ impl LobbyServer {
                     Ok((stream, _addr)) => {
                         let client_id = next_id;
                         next_id += 1;
+                        let _ = stream.set_nodelay(true);
 
                         let stream_clone = stream.try_clone().expect("clone stream");
                         let tx = event_tx.clone();
@@ -62,7 +63,7 @@ impl LobbyServer {
             state: LobbyState::new_host(host_name),
             my_addr: local_addr,
             client_streams: Vec::new(),
-            event_rx,
+            event_rx: Some(event_rx),
             shutdown,
             _listener_handle: listener_handle,
         })
@@ -72,7 +73,9 @@ impl LobbyServer {
     pub fn update(&mut self) -> bool {
         let mut changed = false;
 
-        while let Ok(event) = self.event_rx.try_recv() {
+        let event_rx = self.event_rx.as_ref().unwrap();
+        let events: Vec<_> = event_rx.try_iter().collect();
+        for event in events {
             match event {
                 ServerEvent::ClientConnected(id, stream) => {
                     if self.state.slots.len() >= 4 {
@@ -90,7 +93,11 @@ impl LobbyServer {
                         // Don't add slot yet — wait for Join message
                     }
                 }
-                ServerEvent::ClientMessage(id, msg) => {
+                ServerEvent::ClientMessage(id, incoming) => {
+                    let msg = match incoming {
+                        ClientIncoming::Lobby(m) => m,
+                        ClientIncoming::GameInput(_) => continue, // ignore during lobby
+                    };
                     match msg {
                         ClientMsg::Join { name } => {
                             if self.state.slots.len() >= 4 {
@@ -154,33 +161,19 @@ impl LobbyServer {
         false
     }
 
-    fn client_slot_index(&self, client_id: usize) -> Option<usize> {
-        // Client IDs map to slots: host is 0, first client is 1, etc.
-        // We track by order: slot 0 = host, slots 1+ = clients in order
-        // Find which slot this client_id maps to
-        let mut client_count = 0;
-        for (i, slot) in self.state.slots.iter().enumerate() {
-            if !slot.is_host {
-                client_count += 1;
-                // Check if this client_id has a stream and this is the right count
-                if self.client_streams.get(client_id).and_then(|s| s.as_ref()).is_some()
-                    && i == client_count
-                {
-                    return Some(i);
+    pub fn client_slot_index(&self, client_id: usize) -> Option<usize> {
+        // Slot 0 = host, slots 1+ = connected clients in stream-order
+        // Find this client_id's position among connected clients
+        let mut slot = 1usize; // start after host
+        for (cid, stream) in self.client_streams.iter().enumerate() {
+            if stream.is_some() {
+                if cid == client_id {
+                    return if slot < self.state.slots.len() { Some(slot) } else { None };
                 }
+                slot += 1;
             }
         }
-        // Simple fallback: find the slot index by matching connected client order
-        // The Nth non-host slot corresponds to the Nth connected client
-        let connected: Vec<usize> = self.client_streams.iter().enumerate()
-            .filter(|(_, s)| s.is_some())
-            .map(|(id, _)| id)
-            .collect();
-        if let Some(pos) = connected.iter().position(|&cid| cid == client_id) {
-            Some(pos + 1) // +1 because slot 0 is host
-        } else {
-            None
-        }
+        None
     }
 
     fn remove_client(&mut self, client_id: usize) {
@@ -233,11 +226,33 @@ impl LobbyServer {
         self.state.slots[0].ready = !self.state.slots[0].ready;
         self.broadcast_snapshot();
     }
+
+    /// Hand off TCP infrastructure to GameServer. Reader threads keep running.
+    pub fn into_game_parts(&mut self) -> GameServerParts {
+        let mut streams = std::mem::take(&mut self.client_streams);
+        for s in streams.iter_mut().flatten() {
+            let _ = s.set_nodelay(true);
+        }
+        GameServerParts {
+            client_streams: streams,
+            event_rx: self.event_rx.take().unwrap(),
+            shutdown: self.shutdown.clone(),
+        }
+    }
+}
+
+pub struct GameServerParts {
+    pub client_streams: Vec<Option<TcpStream>>,
+    pub event_rx: Receiver<ServerEvent>,
+    pub shutdown: Arc<AtomicBool>,
 }
 
 impl Drop for LobbyServer {
     fn drop(&mut self) {
-        self.shutdown.store(true, Ordering::Relaxed);
+        // Only shutdown if we haven't handed off to GameServer
+        if self.event_rx.is_some() {
+            self.shutdown.store(true, Ordering::Relaxed);
+        }
     }
 }
 
@@ -256,7 +271,7 @@ fn read_client(
             Ok(0) => break, // Disconnected
             Ok(n) => {
                 read_buf.append(&tmp[..n]);
-                while let Some(msg) = read_buf.try_decode_client() {
+                while let Some(msg) = read_buf.try_decode_client_incoming() {
                     if tx.send(ServerEvent::ClientMessage(client_id, msg)).is_err() {
                         return;
                     }

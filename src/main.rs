@@ -7,6 +7,8 @@ mod physics;
 mod player;
 mod render;
 
+use game::client::GameClient;
+use game::server::GameServer;
 use game::world::World;
 use lobby::client::LobbyClient;
 use lobby::screen::{draw_lobby, lobby_input, LobbyInput};
@@ -27,7 +29,8 @@ enum LobbyRole {
 enum AppState {
     Menu,
     Lobby(LobbyRole),
-    InGame,
+    InGameHost(GameServer),
+    InGameClient(GameClient),
 }
 
 fn main() {
@@ -43,7 +46,6 @@ fn main() {
     let mut crt = CrtFilter::new(&mut rl, &thread, SCREEN_WIDTH, SCREEN_HEIGHT);
     let mut render_w = SCREEN_WIDTH;
     let mut render_h = SCREEN_HEIGHT;
-    let mut world = World::new();
     let mut menu = Menu::new();
     let mut app_state = AppState::Menu;
     let mut game_time: f32 = 0.0;
@@ -64,7 +66,6 @@ fn main() {
             crt = CrtFilter::new(&mut rl, &thread, render_w, render_h);
         }
 
-        // We need to handle state transitions carefully due to ownership
         let mut next_state = None;
 
         match &mut app_state {
@@ -115,7 +116,6 @@ fn main() {
 
                 match role {
                     LobbyRole::Host(server) => {
-                        // Handle host input
                         match input {
                             LobbyInput::ColorLeft => {
                                 let cur = server.state.slots[0].color;
@@ -141,9 +141,12 @@ fn main() {
 
                         let game_start = server.update();
                         if game_start {
-                            world = World::from_lobby(&server.state);
+                            let world = World::from_lobby(&server.state);
+                            let parts = server.into_game_parts();
                             game_time = 0.0;
-                            next_state = Some(AppState::InGame);
+                            next_state = Some(AppState::InGameHost(
+                                GameServer::new(world, parts),
+                            ));
                         }
 
                         if next_state.is_none() {
@@ -198,9 +201,12 @@ fn main() {
                         }
 
                         if client.game_starting {
-                            world = World::from_lobby(&client.state);
+                            let world = World::from_lobby(&client.state);
+                            let parts = client.into_game_parts();
                             game_time = 0.0;
-                            next_state = Some(AppState::InGame);
+                            next_state = Some(AppState::InGameClient(
+                                GameClient::new(world, parts),
+                            ));
                         }
 
                         if next_state.is_none() {
@@ -221,16 +227,31 @@ fn main() {
                     }
                 }
             }
-            AppState::InGame => {
+            AppState::InGameHost(game_server) => {
                 if rl.is_key_pressed(KeyboardKey::KEY_ESCAPE) {
                     next_state = Some(AppState::Menu);
                 } else {
                     game_time += dt;
-                    let camera = render::camera::game_camera(&world);
-                    world.update(&rl, &camera, dt);
+                    let camera = render::camera::game_camera(&game_server.world);
+                    game_server.update(&rl, &camera, dt);
                     let theme = menu.theme();
                     render::game::draw_world(
-                        &mut rl, &thread, &mut crt, &world, camera, render_w, render_h, theme, game_time,
+                        &mut rl, &thread, &mut crt, &game_server.world, camera,
+                        render_w, render_h, theme, game_time,
+                    );
+                }
+            }
+            AppState::InGameClient(game_client) => {
+                if rl.is_key_pressed(KeyboardKey::KEY_ESCAPE) {
+                    next_state = Some(AppState::Menu);
+                } else {
+                    game_time += dt;
+                    let camera = render::camera::game_camera(&game_client.world);
+                    game_client.update(&rl, &camera, dt);
+                    let theme = menu.theme();
+                    render::game::draw_world(
+                        &mut rl, &thread, &mut crt, &game_client.world, camera,
+                        render_w, render_h, theme, game_time,
                     );
                 }
             }
