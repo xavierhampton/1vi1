@@ -50,6 +50,7 @@ pub struct WorldSnapshot {
     pub state_tag: u8, // 0=RoundStart, 1=Playing, 2=RoundEnd
     pub state_timer: f32,
     pub time_scale: f32, // 1.0 normal, 0.25 slow-mo, 0.0 frozen
+    pub level_id: u8,
     pub winner_index: u8,
     pub player_count: u8,
     pub players: Vec<PlayerSnapshot>,
@@ -132,6 +133,7 @@ pub fn encode_snapshot(snap: &WorldSnapshot) -> Vec<u8> {
     payload.push(snap.state_tag);
     push_f32(&mut payload, snap.state_timer);
     push_f32(&mut payload, snap.time_scale);
+    payload.push(snap.level_id);
     payload.push(snap.winner_index);
 
     // Players
@@ -226,6 +228,7 @@ pub fn decode_snapshot(data: &[u8]) -> Option<WorldSnapshot> {
     let state_tag = read_u8(data, &mut pos);
     let state_timer = read_f32(data, &mut pos);
     let time_scale = read_f32(data, &mut pos);
+    let level_id = read_u8(data, &mut pos);
     let winner_index = read_u8(data, &mut pos);
 
     let player_count = read_u8(data, &mut pos);
@@ -315,6 +318,7 @@ pub fn decode_snapshot(data: &[u8]) -> Option<WorldSnapshot> {
         state_tag,
         state_timer,
         time_scale,
+        level_id,
         winner_index,
         player_count,
         players,

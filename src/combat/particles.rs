@@ -13,11 +13,16 @@ impl Rng {
         Self { state: seed.max(1) }
     }
 
-    pub fn next_f32(&mut self) -> f32 {
+    pub fn next(&mut self) -> u64 {
         self.state ^= self.state << 13;
         self.state ^= self.state >> 7;
         self.state ^= self.state << 17;
-        (self.state >> 11) as f32 / (1u64 << 53) as f32
+        self.state
+    }
+
+    pub fn next_f32(&mut self) -> f32 {
+        let v = self.next();
+        (v >> 11) as f32 / (1u64 << 53) as f32
     }
 
     pub fn range(&mut self, min: f32, max: f32) -> f32 {

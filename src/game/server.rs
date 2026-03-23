@@ -5,7 +5,7 @@ use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
 
 use raylib::prelude::*;
 
-use crate::combat::particles::update_particles;
+use crate::combat::particles::{spawn_death_explosion, spawn_player_hit, spawn_terrain_hit, update_particles};
 use crate::game::net::{self, GameEvent, WorldSnapshot};
 use crate::game::world::World;
 use crate::lobby::protocol::ClientIncoming;
@@ -95,6 +95,26 @@ impl GameServer {
 
         // 3. Run physics every frame for smooth host rendering
         let game_events = self.world.server_update(&self.inputs, dt);
+
+        // Spawn particles locally on host from events
+        for ev in &game_events {
+            match ev {
+                GameEvent::PlayerHit { x, y, z, r, g, b } => {
+                    spawn_player_hit(&mut self.world.particles, &mut self.world.rng,
+                        Vector3::new(*x, *y, *z), Color::new(*r, *g, *b, 255));
+                }
+                GameEvent::PlayerDied { x, y, z, r, g, b } => {
+                    spawn_death_explosion(&mut self.world.particles, &mut self.world.rng,
+                        Vector3::new(*x, *y, *z), Color::new(*r, *g, *b, 255));
+                }
+                GameEvent::TerrainHit { x, y, z, r, g, b } => {
+                    spawn_terrain_hit(&mut self.world.particles, &mut self.world.rng,
+                        Vector3::new(*x, *y, *z), Color::new(*r, *g, *b, 255));
+                }
+                GameEvent::BulletFired { .. } => {}
+            }
+        }
+
         self.pending_events.extend(game_events);
 
         // Clear one-shot inputs after physics consumes them

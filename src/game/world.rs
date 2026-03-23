@@ -5,7 +5,7 @@ use crate::combat::combat::update_bullets;
 use crate::combat::particles::{spawn_death_explosion, spawn_player_hit, spawn_terrain_hit, update_particles, Particle, Rng};
 use crate::game::net::{BulletSnapshot, GameEvent, PlayerSnapshot, WorldSnapshot};
 use crate::game::state::GameState;
-use crate::level::level::Level;
+use crate::level::level::{self, Level};
 use crate::lobby::state::LobbyState;
 use crate::player::input::{self, PlayerInput};
 use crate::player::movement;
@@ -44,7 +44,7 @@ impl World {
 
     pub fn with_player_count(count: usize) -> Self {
         let count = count.clamp(2, 4);
-        let level = Level::test_level();
+        let level = level::level_by_id(0);
         let players = (0..count)
             .map(|i| {
                 Player::new(
@@ -72,7 +72,12 @@ impl World {
     }
 
     pub fn from_lobby(lobby: &LobbyState) -> Self {
-        let level = Level::test_level();
+        let seed = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos() as u64)
+            .unwrap_or(42);
+        let mut rng = Rng::new(seed);
+        let level = level::random_level(rng.next());
         let count = lobby.slots.len().clamp(2, 4);
         let players = lobby.slots.iter().enumerate().take(count).map(|(i, slot)| {
             Player::new(
@@ -82,10 +87,6 @@ impl World {
                 &slot.name,
             )
         }).collect();
-        let seed = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_nanos() as u64)
-            .unwrap_or(42);
 
         Self {
             players,
@@ -94,11 +95,14 @@ impl World {
             level,
             state: GameState::RoundStart { timer: COUNTDOWN_DURATION },
             scores: vec![0; count],
-            rng: Rng::new(seed),
+            rng,
         }
     }
 
     fn reset_round(&mut self) {
+        // Pick a new random map
+        self.level = level::random_level(self.rng.next());
+
         for (i, player) in self.players.iter_mut().enumerate() {
             player.position = self.level.spawn_points[i];
             player.velocity = Vector3::new(0.0, 0.0, 0.0);
@@ -318,6 +322,7 @@ impl World {
             state_tag,
             state_timer,
             time_scale,
+            level_id: self.level.id,
             winner_index: self.winner_index(),
             player_count: self.players.len() as u8,
             players,
@@ -330,6 +335,11 @@ impl World {
     // ── Snapshot application (client) ────────────────────────────────────────
 
     pub fn apply_snapshot(&mut self, snap: &WorldSnapshot) {
+        // Swap level if changed
+        if snap.level_id != self.level.id {
+            self.level = level::level_by_id(snap.level_id);
+        }
+
         // Update game state
         let names: Vec<String> = self.players.iter().map(|p| p.name.clone()).collect();
         let colors: Vec<Color> = self.players.iter().map(|p| p.color).collect();

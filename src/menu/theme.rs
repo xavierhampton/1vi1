@@ -116,9 +116,9 @@ fn make_theme(
             255,
         ),
         game_wire_color: Color::new(
-            (accent.r / 3).saturating_add(50),
-            (accent.g / 3).saturating_add(50),
-            (accent.b / 3).saturating_add(50),
+            (accent.r / 3).saturating_add(60),
+            (accent.g / 3).saturating_add(60),
+            (accent.b / 3).saturating_add(60),
             255,
         ),
     }
@@ -128,14 +128,14 @@ pub const THEME_COUNT: usize = 16;
 
 pub fn all_themes() -> [Theme; THEME_COUNT] {
     [
-        // 0: Midnight (default)
+        // 0: Terminal (default)
         make_theme(
-            "midnight",
-            Color::new(12, 12, 18, 255),
-            Color::new(80, 180, 255, 255),
-            Color::new(240, 240, 250, 255),
-            Color::new(160, 160, 175, 255),
-            Color::new(120, 120, 140, 255),
+            "terminal",
+            Color::new(0, 0, 0, 255),
+            Color::new(0, 255, 65, 255),
+            Color::new(0, 255, 65, 255),
+            Color::new(0, 160, 40, 255),
+            Color::new(0, 120, 30, 255),
         ),
         // 1: Crimson
         make_theme(
@@ -218,14 +218,14 @@ pub fn all_themes() -> [Theme; THEME_COUNT] {
             Color::new(120, 160, 185, 255),
             Color::new(80, 130, 160, 255),
         ),
-        // 10: Terminal
+        // 10: Midnight
         make_theme(
-            "terminal",
-            Color::new(0, 0, 0, 255),
-            Color::new(0, 255, 65, 255),
-            Color::new(0, 255, 65, 255),
-            Color::new(0, 160, 40, 255),
-            Color::new(0, 120, 30, 255),
+            "midnight",
+            Color::new(12, 12, 18, 255),
+            Color::new(80, 180, 255, 255),
+            Color::new(240, 240, 250, 255),
+            Color::new(160, 160, 175, 255),
+            Color::new(120, 120, 140, 255),
         ),
         // 11: Lava
         make_theme(

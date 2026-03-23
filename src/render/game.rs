@@ -50,9 +50,32 @@ pub fn draw_world(
             for platform in &world.level.platforms {
                 let c = platform.aabb.center();
                 let s = platform.aabb.size();
-                let color = if platform.is_wall { theme.game_wall_color } else { theme.game_platform_color };
-                d3.draw_cube(c, s.x, s.y, s.z, color);
-                d3.draw_cube_wires(c, s.x, s.y, s.z, theme.game_wire_color);
+                let base = if platform.is_wall { theme.game_wall_color } else { theme.game_platform_color };
+                let wire = theme.game_wire_color;
+
+                // Outer frame (the border)
+                d3.draw_cube(c, s.x, s.y, s.z, wire);
+
+                // Inner inset face (lighter core)
+                let inset = 0.12_f32;
+                let inner = Color::new(
+                    base.r.saturating_add(20),
+                    base.g.saturating_add(20),
+                    base.b.saturating_add(20),
+                    255,
+                );
+                let ix = (s.x - inset * 2.0).max(0.05);
+                let iy = (s.y - inset * 2.0).max(0.05);
+                let iz = (s.z - inset * 2.0).max(0.05);
+                d3.draw_cube(c, ix, iy, iz, inner);
+
+                // Outer wireframe for crispness
+                d3.draw_cube_wires(c, s.x, s.y, s.z, Color::new(
+                    wire.r.saturating_add(40),
+                    wire.g.saturating_add(40),
+                    wire.b.saturating_add(40),
+                    255,
+                ));
             }
         }
     }
