@@ -246,7 +246,7 @@ fn main() {
                     let theme = menu.theme();
                     render::game::draw_world(
                         &mut rl, &thread, &mut crt, &game_server.world, camera,
-                        render_w, render_h, theme, game_time, &card_anim,
+                        render_w, render_h, theme, game_time, &card_anim, 0,
                     );
                 }
             }
@@ -262,6 +262,7 @@ fn main() {
                     render::game::draw_world(
                         &mut rl, &thread, &mut crt, &game_client.world, camera,
                         render_w, render_h, theme, game_time, &card_anim,
+                        game_client.my_index,
                     );
                 }
             }

@@ -81,6 +81,7 @@ impl GameServer {
                                     self.inputs[slot].jump_held = new_input.jump_held;
                                     self.inputs[slot].jump_pressed |= new_input.jump_pressed;
                                     self.inputs[slot].shoot_pressed |= new_input.shoot_pressed;
+                                    self.inputs[slot].ability_pressed |= new_input.ability_pressed;
                                     self.inputs[slot].cursor_x = new_input.cursor_x;
                                     self.inputs[slot].cursor_y = new_input.cursor_y;
                                     self.inputs[slot].hover_card = new_input.hover_card;
@@ -162,6 +163,7 @@ impl GameServer {
         for inp in &mut self.inputs {
             inp.jump_pressed = false;
             inp.shoot_pressed = false;
+            inp.ability_pressed = false;
         }
 
         // 4. Broadcast snapshots at fixed rate

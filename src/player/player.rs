@@ -1,5 +1,6 @@
 use raylib::prelude::*;
 
+use crate::game::cards::CardId;
 use crate::physics::collision::AABB;
 
 pub const HIT_FLASH_DURATION: f32 = 0.15;
@@ -22,6 +23,7 @@ pub struct Player {
     pub hp: f32,
     pub max_hp: f32,
     pub alive: bool,
+    pub abilities: Vec<(CardId, f32)>, // (ability, remaining cooldown)
 }
 
 impl Player {
@@ -44,6 +46,7 @@ impl Player {
             hp: 100.0,
             max_hp: 100.0,
             alive: true,
+            abilities: Vec::new(),
         }
     }
 

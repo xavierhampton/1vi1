@@ -31,6 +31,7 @@ pub struct PlayerSnapshot {
     pub alive: bool,
     pub cursor_x: f32,
     pub cursor_y: f32,
+    pub abilities: Vec<(u8, f32)>, // (CardId as u8, remaining_cooldown)
 }
 
 #[derive(Debug, Clone)]
@@ -80,7 +81,8 @@ pub fn encode_game_input(input: &PlayerInput) -> Vec<u8> {
     payload.extend_from_slice(&input.move_dir.to_le_bytes());
     let flags: u8 = (input.jump_pressed as u8)
         | ((input.jump_held as u8) << 1)
-        | ((input.shoot_pressed as u8) << 2);
+        | ((input.shoot_pressed as u8) << 2)
+        | ((input.ability_pressed as u8) << 3);
     payload.push(flags);
     payload.extend_from_slice(&input.aim_dir.x.to_le_bytes());
     payload.extend_from_slice(&input.aim_dir.y.to_le_bytes());
@@ -118,6 +120,7 @@ pub fn decode_game_input(data: &[u8]) -> Option<PlayerInput> {
         jump_pressed: flags & 1 != 0,
         jump_held: flags & 2 != 0,
         shoot_pressed: flags & 4 != 0,
+        ability_pressed: flags & 8 != 0,
         aim_dir: Vector2::new(aim_x, aim_y),
         cursor_x,
         cursor_y,
@@ -181,6 +184,11 @@ pub fn encode_snapshot(snap: &WorldSnapshot) -> Vec<u8> {
         payload.push(p.alive as u8);
         push_f32(&mut payload, p.cursor_x);
         push_f32(&mut payload, p.cursor_y);
+        payload.push(p.abilities.len() as u8);
+        for (card_id, cooldown) in &p.abilities {
+            payload.push(*card_id);
+            push_f32(&mut payload, *cooldown);
+        }
     }
 
     // Scores
@@ -280,21 +288,37 @@ pub fn decode_snapshot(data: &[u8]) -> Option<WorldSnapshot> {
     let mut players = Vec::with_capacity(player_count as usize);
     for _ in 0..player_count {
         if pos + 50 > data.len() { return None; }
+        let ps_pos_x = read_f32(data, &mut pos);
+        let ps_pos_y = read_f32(data, &mut pos);
+        let ps_vel_x = read_f32(data, &mut pos);
+        let ps_vel_y = read_f32(data, &mut pos);
+        let ps_aim_x = read_f32(data, &mut pos);
+        let ps_aim_y = read_f32(data, &mut pos);
+        let ps_hp = read_f32(data, &mut pos);
+        let ps_hit_flash = read_f32(data, &mut pos);
+        let ps_reload_timer = read_f32(data, &mut pos);
+        let ps_shoot_cooldown = read_f32(data, &mut pos);
+        let ps_bullets_remaining = read_u8(data, &mut pos) as i8;
+        let ps_alive = read_u8(data, &mut pos) != 0;
+        let ps_cursor_x = read_f32(data, &mut pos);
+        let ps_cursor_y = read_f32(data, &mut pos);
+        let ability_count = if pos < data.len() { read_u8(data, &mut pos) } else { 0 };
+        let mut abilities = Vec::with_capacity(ability_count as usize);
+        for _ in 0..ability_count {
+            if pos + 5 > data.len() { break; }
+            let card_id = read_u8(data, &mut pos);
+            let cooldown = read_f32(data, &mut pos);
+            abilities.push((card_id, cooldown));
+        }
         players.push(PlayerSnapshot {
-            pos_x: read_f32(data, &mut pos),
-            pos_y: read_f32(data, &mut pos),
-            vel_x: read_f32(data, &mut pos),
-            vel_y: read_f32(data, &mut pos),
-            aim_x: read_f32(data, &mut pos),
-            aim_y: read_f32(data, &mut pos),
-            hp: read_f32(data, &mut pos),
-            hit_flash: read_f32(data, &mut pos),
-            reload_timer: read_f32(data, &mut pos),
-            shoot_cooldown: read_f32(data, &mut pos),
-            bullets_remaining: read_u8(data, &mut pos) as i8,
-            alive: read_u8(data, &mut pos) != 0,
-            cursor_x: read_f32(data, &mut pos),
-            cursor_y: read_f32(data, &mut pos),
+            pos_x: ps_pos_x, pos_y: ps_pos_y,
+            vel_x: ps_vel_x, vel_y: ps_vel_y,
+            aim_x: ps_aim_x, aim_y: ps_aim_y,
+            hp: ps_hp, hit_flash: ps_hit_flash,
+            reload_timer: ps_reload_timer, shoot_cooldown: ps_shoot_cooldown,
+            bullets_remaining: ps_bullets_remaining, alive: ps_alive,
+            cursor_x: ps_cursor_x, cursor_y: ps_cursor_y,
+            abilities,
         });
     }
 

@@ -21,6 +21,7 @@ pub struct GameClient {
     pub my_index: u8,
     // Extrapolation: track base positions from last snapshot + time since
     snap_positions: Vec<(Vector3, Vector3)>, // (base_pos, velocity) per player
+    snap_aim: Vec<Vector2>, // target aim_dir per player (from snapshot)
     time_since_snap: f32,
     time_scale: f32, // from server: 1.0 normal, 0.25 slow-mo, 0.0 frozen
 }
@@ -30,6 +31,9 @@ impl GameClient {
         let snap_positions = world.players.iter()
             .map(|p| (p.position, p.velocity))
             .collect();
+        let snap_aim = world.players.iter()
+            .map(|p| p.aim_dir)
+            .collect();
         Self {
             world,
             write_stream: parts.write_stream,
@@ -37,6 +41,7 @@ impl GameClient {
             shutdown: parts.shutdown,
             my_index: parts.my_index,
             snap_positions,
+            snap_aim,
             time_since_snap: 0.0,
             time_scale: 1.0,
         }
@@ -93,10 +98,12 @@ impl GameClient {
         if let Some(snap) = latest_snapshot {
             self.time_scale = snap.time_scale;
             self.world.apply_snapshot(&snap);
-            // Store base positions + velocities for extrapolation
+            // Store base positions + velocities + aim for extrapolation
             self.snap_positions.clear();
+            self.snap_aim.clear();
             for p in &self.world.players {
                 self.snap_positions.push((p.position, p.velocity));
+                self.snap_aim.push(p.aim_dir);
             }
             self.time_since_snap = 0.0;
             got_snapshot = true;
@@ -107,16 +114,34 @@ impl GameClient {
             self.world.card_hover = local_hover;
         }
 
-        // 4. Extrapolate positions between snapshots for smooth rendering
+        // 4. Apply local player's aim directly for instant responsiveness
+        if my_idx < self.world.players.len() {
+            let center = Vector2::new(
+                self.world.players[my_idx].position.x,
+                self.world.players[my_idx].position.y + self.world.players[my_idx].size.y / 2.0,
+            );
+            let local_input = input::read_input(rl, camera, center);
+            self.world.players[my_idx].aim_dir = local_input.aim_dir;
+        }
+
+        // 5. Extrapolate positions + lerp remote aim between snapshots
         if !got_snapshot {
             self.time_since_snap += dt;
-            // Cap extrapolation to avoid overshooting
             let t = self.time_since_snap.min(0.05) * self.time_scale;
             for (i, (base_pos, vel)) in self.snap_positions.iter().enumerate() {
                 if i < self.world.players.len() {
                     self.world.players[i].position.x = base_pos.x + vel.x * t;
                     self.world.players[i].position.y = base_pos.y + vel.y * t;
                 }
+            }
+        }
+        // Lerp remote players' aim toward snapshot target
+        let aim_lerp = (dt * 30.0).min(1.0);
+        for (i, target_aim) in self.snap_aim.iter().enumerate() {
+            if i != my_idx && i < self.world.players.len() {
+                let cur = &mut self.world.players[i].aim_dir;
+                cur.x += (target_aim.x - cur.x) * aim_lerp;
+                cur.y += (target_aim.y - cur.y) * aim_lerp;
             }
         }
 

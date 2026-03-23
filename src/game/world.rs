@@ -21,7 +21,7 @@ const SLOW_MO_FACTOR: f32 = 0.25;
 pub const WINS_TO_MATCH: i32 = 3;
 
 const CARD_ENTRANCE_DURATION: f32 = 0.8;
-const CARD_EXIT_DURATION: f32 = 0.5;
+const CARD_EXIT_DURATION: f32 = 0.8;
 const MATCH_OVER_DURATION: f32 = 5.0;
 
 const PLAYER_COLORS: [Color; 4] = [
@@ -125,6 +125,10 @@ impl World {
             player.reload_timer = 0.0;
             player.shoot_cooldown = 0.0;
             player.aim_dir = Vector2::new(if i % 2 == 0 { 1.0 } else { -1.0 }, 0.0);
+            // Reset ability cooldowns but keep abilities
+            for (_, cd) in player.abilities.iter_mut() {
+                *cd = 0.0;
+            }
         }
         self.bullets.clear();
         self.particles.clear();
@@ -233,6 +237,12 @@ impl World {
         match &self.state {
             GameState::RoundStart { timer } => {
                 let new_timer = *timer - dt;
+                // Let players look around during countdown
+                for (i, inp) in inputs.iter().enumerate() {
+                    if i < self.players.len() {
+                        self.players[i].aim_dir = inp.aim_dir;
+                    }
+                }
                 if new_timer <= 0.0 {
                     self.state = GameState::Playing;
                 } else {
@@ -309,7 +319,18 @@ impl World {
             // Card was chosen — tick exit timer
             let new_exit = exit_timer + dt;
             if new_exit >= CARD_EXIT_DURATION {
-                // Store the buff (future use) — advance to next picker or round
+                // Store the ability on the picker
+                if let Some(slot) = chosen_card {
+                    let card_id_u8 = offered_cards[slot as usize];
+                    if let Some(card_id) = cards::CardId::from_u8(card_id_u8) {
+                        let picker_idx = current_picker as usize;
+                        if picker_idx < self.players.len() {
+                            self.players[picker_idx].abilities.push((card_id, 0.0));
+                        }
+                    }
+                }
+
+                // Advance to next picker or round
                 if pick_order.is_empty() {
                     self.reset_round();
                 } else {
@@ -388,6 +409,24 @@ impl World {
                     self.players[i].reload_timer = RELOAD_TIME;
                 }
             }
+
+            // Tick ability cooldowns
+            for (_, cd) in self.players[i].abilities.iter_mut() {
+                *cd = (*cd - dt).max(0.0);
+            }
+
+            // Activate abilities on right-click
+            if inp.ability_pressed {
+                let to_activate: Vec<(usize, cards::CardId)> = self.players[i].abilities.iter()
+                    .enumerate()
+                    .filter(|(_, (_, cd))| *cd <= 0.0)
+                    .map(|(j, (card_id, _))| (j, *card_id))
+                    .collect();
+                for (j, card_id) in to_activate {
+                    let cd = cards::activate_ability(card_id, &mut self.players[i]);
+                    self.players[i].abilities[j].1 = cd;
+                }
+            }
         }
 
         // Tick hit flash timers
@@ -455,6 +494,7 @@ impl World {
                 alive: p.alive,
                 cursor_x: cx,
                 cursor_y: cy,
+                abilities: p.abilities.iter().map(|(c, cd)| (*c as u8, *cd)).collect(),
             }
         }).collect();
 
@@ -543,6 +583,13 @@ impl World {
             // Update cursor positions
             if i < self.cursor_positions.len() {
                 self.cursor_positions[i] = (ps.cursor_x, ps.cursor_y);
+            }
+            // Update abilities
+            p.abilities.clear();
+            for (card_id_u8, cooldown) in &ps.abilities {
+                if let Some(card_id) = cards::CardId::from_u8(*card_id_u8) {
+                    p.abilities.push((card_id, *cooldown));
+                }
             }
         }
 

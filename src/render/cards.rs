@@ -9,15 +9,15 @@ const CARD_H: f32 = 250.0;
 const CARD_GAP: f32 = 40.0;
 
 const ENTRANCE_DURATION: f32 = 0.8;
-const EXIT_DURATION: f32 = 0.5;
+const EXIT_DURATION: f32 = 0.8;
 
-/// Client-only animation state for card pick phase
+/// Client-only animation state for card pick phase — ticks locally for smooth rendering
 pub struct CardPickAnim {
-    pub entrance_t: f32,     // 0..1 (0=cards offscreen, 1=fully in)
+    pub entrance_t: f32,     // 0..ENTRANCE_DURATION, ticked locally
     pub hover_index: Option<u8>,
-    pub slam_t: f32,         // 0..1 (chosen card slam animation)
-    pub exit_t: f32,         // 0..1 (unchosen cards shrinking out)
+    pub slam_t: f32,         // 0..EXIT_DURATION, ticked locally after card chosen
     pub prev_picker: u8,
+    pub chose_seen: bool,    // whether we've started the slam anim
     pub toast_timer: f32,
     pub toast_text: String,
 }
@@ -28,39 +28,45 @@ impl CardPickAnim {
             entrance_t: 0.0,
             hover_index: None,
             slam_t: 0.0,
-            exit_t: 0.0,
             prev_picker: 0xFF,
+            chose_seen: false,
             toast_timer: 0.0,
             toast_text: String::new(),
         }
     }
 
     pub fn update(&mut self, world: &World, dt: f32) {
-        if let GameState::CardPick { current_picker, chosen_card, phase_timer, exit_timer, .. } = &world.state {
+        if let GameState::CardPick { current_picker, chosen_card, .. } = &world.state {
             // Reset anim when picker changes
             if *current_picker != self.prev_picker {
                 self.entrance_t = 0.0;
                 self.slam_t = 0.0;
-                self.exit_t = 0.0;
                 self.hover_index = None;
+                self.chose_seen = false;
                 self.prev_picker = *current_picker;
             }
 
-            // Entrance animation
-            let entrance_phase = 1.0 - (*phase_timer / ENTRANCE_DURATION).clamp(0.0, 1.0);
-            self.entrance_t = ease_out(entrance_phase);
+            // Tick entrance locally
+            if self.entrance_t < ENTRANCE_DURATION {
+                self.entrance_t = (self.entrance_t + dt).min(ENTRANCE_DURATION);
+            }
 
             // Hover: read directly from server-broadcast card_hover
-            if chosen_card.is_none() && *phase_timer <= 0.0 && world.card_hover < 3 {
+            let entrance_done = self.entrance_t >= ENTRANCE_DURATION;
+            if chosen_card.is_none() && entrance_done && world.card_hover < 3 {
                 self.hover_index = Some(world.card_hover);
-            } else {
+            } else if chosen_card.is_none() {
                 self.hover_index = None;
             }
 
-            // Slam + exit
+            // Slam + exit: tick locally once server says a card was chosen
             if chosen_card.is_some() {
-                self.slam_t = (*exit_timer / EXIT_DURATION).clamp(0.0, 1.0);
-                self.exit_t = self.slam_t;
+                if !self.chose_seen {
+                    self.chose_seen = true;
+                    self.slam_t = 0.0;
+                    self.hover_index = None;
+                }
+                self.slam_t = (self.slam_t + dt).min(EXIT_DURATION);
             }
 
             // Toast
@@ -72,6 +78,7 @@ impl CardPickAnim {
             if self.prev_picker != 0xFF {
                 self.prev_picker = 0xFF;
                 self.entrance_t = 0.0;
+                self.chose_seen = false;
             }
         }
     }
@@ -112,24 +119,32 @@ pub fn draw_card_pick(
     // Dim overlay
     d.draw_rectangle(0, 0, screen_w, screen_h, Color::new(0, 0, 0, 160));
 
-    // Banner text
-    let picker_name = world.players.get(current_picker as usize)
-        .map(|p| p.name.as_str())
-        .unwrap_or("???");
-
-    let banner = if chosen_card.is_some() {
-        let slot = chosen_card.unwrap() as usize;
-        let card_id = offered_cards.get(slot).copied().unwrap_or(0) as usize;
-        let card_name = CARD_CATALOG.get(card_id).map(|c| c.name).unwrap_or("???");
-        format!("{} took {}", picker_name, card_name)
-    } else {
-        format!("{} is choosing...", picker_name)
-    };
+    // Banner text — player name in their color
+    let picker = world.players.get(current_picker as usize);
+    let picker_name = picker.map(|p| p.name.as_str()).unwrap_or("???");
+    let picker_color = picker.map(|p| p.color).unwrap_or(Color::WHITE);
 
     let banner_size = 32;
-    let banner_w = d.measure_text(&banner, banner_size);
     let banner_y = (sh * 0.25) as i32;
-    d.draw_text(&banner, screen_w / 2 - banner_w / 2, banner_y, banner_size, Color::WHITE);
+
+    let (suffix, suffix_color) = if chosen_card.is_some() {
+        let slot = chosen_card.unwrap() as usize;
+        let card_id = offered_cards.get(slot).copied().unwrap_or(0) as usize;
+        let card_def = CARD_CATALOG.get(card_id);
+        let card_name = card_def.map(|c| c.name).unwrap_or("???");
+        let (cr, cg, cb) = card_def.map(|c| c.color).unwrap_or((255, 255, 255));
+        (format!(" took {}", card_name), Color::new(cr, cg, cb, 255))
+    } else {
+        (" is choosing...".to_string(), Color::WHITE)
+    };
+
+    let name_w = d.measure_text(picker_name, banner_size);
+    let suffix_w = d.measure_text(&suffix, banner_size);
+    let total_w = name_w + suffix_w;
+    let start_x = screen_w / 2 - total_w / 2;
+
+    d.draw_text(picker_name, start_x, banner_y, banner_size, picker_color);
+    d.draw_text(&suffix, start_x + name_w, banner_y, banner_size, suffix_color);
 
     // Draw the 3 cards
     let rects = card_rects(sw, sh);
@@ -145,13 +160,10 @@ pub fn draw_card_pick(
         let (base_x, base_y) = rects[i as usize];
 
         // Entrance: slide up from below, staggered per card
-        // Normalize stagger so all 3 cards fully arrive when entrance_t = 1.0
-        let stagger_offset = i as f32 * 0.15;
-        let card_entrance = if anim.entrance_t <= stagger_offset {
-            0.0
-        } else {
-            ((anim.entrance_t - stagger_offset) / (1.0 - stagger_offset)).min(1.0)
-        };
+        let stagger_sec = i as f32 * 0.12;
+        let card_elapsed = (anim.entrance_t - stagger_sec).max(0.0);
+        let card_dur = ENTRANCE_DURATION - stagger_sec;
+        let card_entrance = if card_dur > 0.0 { (card_elapsed / card_dur).min(1.0) } else { 1.0 };
         let entrance_ease = ease_out(card_entrance);
         let mut card_y = offscreen_y + (base_y - offscreen_y) * entrance_ease;
 
@@ -163,15 +175,14 @@ pub fn draw_card_pick(
         let is_chosen = chosen_card == Some(i);
 
         if chosen_card.is_some() {
+            let progress = (anim.slam_t / EXIT_DURATION).clamp(0.0, 1.0);
             if is_chosen {
                 // Slam: scale bump then settle
-                let t = anim.slam_t;
-                scale = 1.0 + 0.15 * (1.0 - t).max(0.0);
+                scale = 1.0 + 0.15 * (1.0 - progress).max(0.0);
             } else {
                 // Unchosen: shrink + fade
-                let t = anim.exit_t;
-                scale = 1.0 - t * 0.6;
-                alpha = (255.0 * (1.0 - t).max(0.0)) as u8;
+                scale = 1.0 - progress * 0.6;
+                alpha = (255.0 * (1.0 - progress).max(0.0)) as u8;
             }
         } else if is_hovered {
             scale = 1.08;
@@ -246,8 +257,9 @@ pub fn draw_card_pick(
         d.draw_text(card_def.description, desc_x, desc_y, desc_size, desc_color);
 
         // Chosen flash overlay
-        if is_chosen && anim.slam_t < 0.3 {
-            let flash_alpha = ((1.0 - anim.slam_t / 0.3) * 120.0) as u8;
+        let slam_progress = (anim.slam_t / EXIT_DURATION).clamp(0.0, 1.0);
+        if is_chosen && slam_progress < 0.5 {
+            let flash_alpha = ((1.0 - slam_progress / 0.5) * 120.0) as u8;
             d.draw_rectangle(
                 draw_x as i32, draw_y as i32,
                 scaled_w as i32, scaled_h as i32,
