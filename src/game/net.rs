@@ -31,7 +31,7 @@ pub struct PlayerSnapshot {
     pub alive: bool,
     pub cursor_x: f32,
     pub cursor_y: f32,
-    pub abilities: Vec<(u8, f32)>, // (CardId as u8, remaining_cooldown)
+    pub cards: Vec<(u8, f32)>, // (CardId as u8, cooldown — 0.0 for powerups)
 }
 
 #[derive(Debug, Clone)]
@@ -184,8 +184,8 @@ pub fn encode_snapshot(snap: &WorldSnapshot) -> Vec<u8> {
         payload.push(p.alive as u8);
         push_f32(&mut payload, p.cursor_x);
         push_f32(&mut payload, p.cursor_y);
-        payload.push(p.abilities.len() as u8);
-        for (card_id, cooldown) in &p.abilities {
+        payload.push(p.cards.len() as u8);
+        for (card_id, cooldown) in &p.cards {
             payload.push(*card_id);
             push_f32(&mut payload, *cooldown);
         }
@@ -302,13 +302,13 @@ pub fn decode_snapshot(data: &[u8]) -> Option<WorldSnapshot> {
         let ps_alive = read_u8(data, &mut pos) != 0;
         let ps_cursor_x = read_f32(data, &mut pos);
         let ps_cursor_y = read_f32(data, &mut pos);
-        let ability_count = if pos < data.len() { read_u8(data, &mut pos) } else { 0 };
-        let mut abilities = Vec::with_capacity(ability_count as usize);
-        for _ in 0..ability_count {
+        let card_count = if pos < data.len() { read_u8(data, &mut pos) } else { 0 };
+        let mut cards = Vec::with_capacity(card_count as usize);
+        for _ in 0..card_count {
             if pos + 5 > data.len() { break; }
             let card_id = read_u8(data, &mut pos);
             let cooldown = read_f32(data, &mut pos);
-            abilities.push((card_id, cooldown));
+            cards.push((card_id, cooldown));
         }
         players.push(PlayerSnapshot {
             pos_x: ps_pos_x, pos_y: ps_pos_y,
@@ -318,7 +318,7 @@ pub fn decode_snapshot(data: &[u8]) -> Option<WorldSnapshot> {
             reload_timer: ps_reload_timer, shoot_cooldown: ps_shoot_cooldown,
             bullets_remaining: ps_bullets_remaining, alive: ps_alive,
             cursor_x: ps_cursor_x, cursor_y: ps_cursor_y,
-            abilities,
+            cards,
         });
     }
 

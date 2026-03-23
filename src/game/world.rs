@@ -2,13 +2,13 @@ use raylib::prelude::*;
 
 use crate::combat::bullet::{Bullet, SHOOT_COOLDOWN};
 use crate::combat::combat::update_bullets;
-use crate::combat::particles::{spawn_death_explosion, spawn_player_hit, spawn_terrain_hit, update_particles, Particle, Rng};
+use crate::combat::particles::{spawn_from_events, Particle, Rng};
 use crate::game::cards;
 use crate::game::net::{BulletSnapshot, GameEvent, PlayerSnapshot, WorldSnapshot};
 use crate::game::state::GameState;
 use crate::level::level::{self, Level};
 use crate::lobby::state::LobbyState;
-use crate::player::input::{self, PlayerInput};
+use crate::player::input::PlayerInput;
 use crate::player::movement;
 use crate::player::player::Player;
 
@@ -24,15 +24,6 @@ const CARD_ENTRANCE_DURATION: f32 = 0.8;
 const CARD_EXIT_DURATION: f32 = 0.8;
 const MATCH_OVER_DURATION: f32 = 5.0;
 
-const PLAYER_COLORS: [Color; 4] = [
-    Color::new(80, 180, 255, 255),
-    Color::new(255, 100, 80, 255),
-    Color::new(100, 230, 120, 255),
-    Color::new(255, 200, 60, 255),
-];
-
-const PLAYER_NAMES: [&str; 4] = ["Xavier", "Keehin", "P3", "P4"];
-
 pub struct World {
     pub players: Vec<Player>,
     pub bullets: Vec<Bullet>,
@@ -46,41 +37,6 @@ pub struct World {
 }
 
 impl World {
-    pub fn new() -> Self {
-        Self::with_player_count(2)
-    }
-
-    pub fn with_player_count(count: usize) -> Self {
-        let count = count.clamp(2, 4);
-        let level = level::level_by_id(0);
-        let players = (0..count)
-            .map(|i| {
-                Player::new(
-                    level.spawn_points[i],
-                    Vector3::new(0.6, 1.6, 0.6),
-                    PLAYER_COLORS[i],
-                    PLAYER_NAMES[i],
-                )
-            })
-            .collect();
-        let seed = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_nanos() as u64)
-            .unwrap_or(42);
-
-        Self {
-            cursor_positions: vec![(0.5, 0.5); count],
-            players,
-            bullets: Vec::new(),
-            particles: Vec::new(),
-            level,
-            state: GameState::RoundStart { timer: COUNTDOWN_DURATION },
-            scores: vec![0; count],
-            rng: Rng::new(seed),
-            card_hover: 0xFF,
-        }
-    }
-
     pub fn from_lobby(lobby: &LobbyState) -> Self {
         let seed = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -125,10 +81,13 @@ impl World {
             player.reload_timer = 0.0;
             player.shoot_cooldown = 0.0;
             player.aim_dir = Vector2::new(if i % 2 == 0 { 1.0 } else { -1.0 }, 0.0);
-            // Reset ability cooldowns but keep abilities
-            for (_, cd) in player.abilities.iter_mut() {
+            // Reset ability cooldowns but keep cards
+            for (_, cd) in player.cards.iter_mut() {
                 *cd = 0.0;
             }
+            // Recompute stats from powerup cards and apply
+            player.stats = cards::compute_stats(&player.cards);
+            cards::apply_stats(player, &player.stats.clone());
         }
         self.bullets.clear();
         self.particles.clear();
@@ -143,13 +102,6 @@ impl World {
             x: pos.x, y: pos.y, z: pos.z,
             r: c.r, g: c.g, b: c.b,
         });
-    }
-
-    fn kill_player_local(&mut self, idx: usize) {
-        self.players[idx].alive = false;
-        let pos = self.players[idx].render_center();
-        let color = self.players[idx].color;
-        spawn_death_explosion(&mut self.particles, &mut self.rng, pos, color);
     }
 
     fn alive_count(&self) -> usize {
@@ -325,7 +277,11 @@ impl World {
                     if let Some(card_id) = cards::CardId::from_u8(card_id_u8) {
                         let picker_idx = current_picker as usize;
                         if picker_idx < self.players.len() {
-                            self.players[picker_idx].abilities.push((card_id, 0.0));
+                            self.players[picker_idx].cards.push((card_id, 0.0));
+                            // Recompute stats if it's a powerup
+                            let p = &mut self.players[picker_idx];
+                            p.stats = cards::compute_stats(&p.cards);
+                            cards::apply_stats(p, &p.stats.clone());
                         }
                     }
                 }
@@ -406,25 +362,29 @@ impl World {
                 self.players[i].bullets_remaining -= 1;
                 self.players[i].shoot_cooldown = SHOOT_COOLDOWN;
                 if self.players[i].bullets_remaining == 0 {
-                    self.players[i].reload_timer = RELOAD_TIME;
+                    self.players[i].reload_timer = RELOAD_TIME * self.players[i].stats.reload_time_mult;
                 }
             }
 
-            // Tick ability cooldowns
-            for (_, cd) in self.players[i].abilities.iter_mut() {
-                *cd = (*cd - dt).max(0.0);
+            // Tick ability cooldowns (only for abilities, not powerups)
+            for (card_id, cd) in self.players[i].cards.iter_mut() {
+                if cards::CARD_CATALOG[*card_id as u8 as usize].is_ability() {
+                    *cd = (*cd - dt).max(0.0);
+                }
             }
 
-            // Activate abilities on right-click
+            // Activate abilities on right-click (skip powerups)
             if inp.ability_pressed {
-                let to_activate: Vec<(usize, cards::CardId)> = self.players[i].abilities.iter()
+                let to_activate: Vec<(usize, cards::CardId)> = self.players[i].cards.iter()
                     .enumerate()
-                    .filter(|(_, (_, cd))| *cd <= 0.0)
+                    .filter(|(_, (card_id, cd))| {
+                        cards::CARD_CATALOG[*card_id as u8 as usize].is_ability() && *cd <= 0.0
+                    })
                     .map(|(j, (card_id, _))| (j, *card_id))
                     .collect();
                 for (j, card_id) in to_activate {
                     let cd = cards::activate_ability(card_id, &mut self.players[i]);
-                    self.players[i].abilities[j].1 = cd;
+                    self.players[i].cards[j].1 = cd;
                 }
             }
         }
@@ -494,7 +454,7 @@ impl World {
                 alive: p.alive,
                 cursor_x: cx,
                 cursor_y: cy,
-                abilities: p.abilities.iter().map(|(c, cd)| (*c as u8, *cd)).collect(),
+                cards: p.cards.iter().map(|(c, cd)| (*c as u8, *cd)).collect(),
             }
         }).collect();
 
@@ -584,13 +544,16 @@ impl World {
             if i < self.cursor_positions.len() {
                 self.cursor_positions[i] = (ps.cursor_x, ps.cursor_y);
             }
-            // Update abilities
-            p.abilities.clear();
-            for (card_id_u8, cooldown) in &ps.abilities {
+            // Update cards
+            p.cards.clear();
+            for (card_id_u8, cooldown) in &ps.cards {
                 if let Some(card_id) = cards::CardId::from_u8(*card_id_u8) {
-                    p.abilities.push((card_id, *cooldown));
+                    p.cards.push((card_id, *cooldown));
                 }
             }
+            // Recompute stats from cards
+            p.stats = cards::compute_stats(&p.cards);
+            p.max_hp = 100.0 + p.stats.max_hp_bonus;
         }
 
         // Update scores
@@ -620,158 +583,7 @@ impl World {
         }
 
         // Spawn particles from events
-        for ev in &snap.events {
-            match ev {
-                GameEvent::PlayerHit { x, y, z, r, g, b } => {
-                    spawn_player_hit(&mut self.particles, &mut self.rng,
-                        Vector3::new(*x, *y, *z), Color::new(*r, *g, *b, 255));
-                }
-                GameEvent::PlayerDied { x, y, z, r, g, b } => {
-                    spawn_death_explosion(&mut self.particles, &mut self.rng,
-                        Vector3::new(*x, *y, *z), Color::new(*r, *g, *b, 255));
-                }
-                GameEvent::TerrainHit { x, y, z, r, g, b } => {
-                    spawn_terrain_hit(&mut self.particles, &mut self.rng,
-                        Vector3::new(*x, *y, *z), Color::new(*r, *g, *b, 255));
-                }
-                GameEvent::BulletFired { .. } => {} // bullets already in snapshot
-            }
-        }
-    }
-
-    // ── Local single-player update (kept for menu/testing) ───────────────────
-
-    pub fn update(&mut self, rl: &RaylibHandle, camera: &Camera3D, dt: f32) {
-        match &self.state {
-            GameState::RoundStart { timer } => {
-                let timer = *timer;
-                let new_timer = timer - dt;
-                if new_timer <= 0.0 {
-                    self.state = GameState::Playing;
-                } else {
-                    self.state = GameState::RoundStart { timer: new_timer };
-                }
-            }
-            GameState::Playing => {
-                self.update_playing_local(rl, camera, dt);
-            }
-            GameState::RoundEnd { winner_index, timer, .. } => {
-                let wi = *winner_index;
-                let timer = *timer;
-                let slow_dt = dt * SLOW_MO_FACTOR;
-
-                if wi == 0 && self.players[0].alive {
-                    let center = Vector2::new(
-                        self.players[0].position.x,
-                        self.players[0].position.y + self.players[0].size.y / 2.0,
-                    );
-                    let p1_input = input::read_input(rl, camera, center);
-                    movement::update(&mut self.players[0], &p1_input, &self.level.platforms, slow_dt);
-                    self.players[0].aim_dir = p1_input.aim_dir;
-                }
-
-                update_particles(&mut self.particles, slow_dt);
-
-                let new_timer = timer - dt;
-                if new_timer <= 0.0 {
-                    self.reset_round();
-                } else {
-                    let name = if let GameState::RoundEnd { winner_name, .. } = &self.state {
-                        winner_name.clone()
-                    } else { String::new() };
-                    let color = if let GameState::RoundEnd { winner_color, .. } = &self.state {
-                        *winner_color
-                    } else { (255, 255, 255) };
-                    self.state = GameState::RoundEnd { winner_index: wi, winner_name: name, winner_color: color, timer: new_timer };
-                }
-            }
-            GameState::CardPick { .. } | GameState::MatchOver { .. } => {
-                // Local mode doesn't use card pick / match over
-            }
-        }
-    }
-
-    fn update_playing_local(&mut self, rl: &RaylibHandle, camera: &Camera3D, dt: f32) {
-        if self.players[0].alive {
-            let center = Vector2::new(
-                self.players[0].position.x,
-                self.players[0].position.y + self.players[0].size.y / 2.0,
-            );
-            let p1_input = input::read_input(rl, camera, center);
-            movement::update(&mut self.players[0], &p1_input, &self.level.platforms, dt);
-            self.players[0].aim_dir = p1_input.aim_dir;
-
-            if self.players[0].reload_timer > 0.0 {
-                self.players[0].reload_timer = (self.players[0].reload_timer - dt).max(0.0);
-                if self.players[0].reload_timer <= 0.0 {
-                    self.players[0].bullets_remaining = MAX_BULLETS;
-                }
-            }
-
-            self.players[0].shoot_cooldown = (self.players[0].shoot_cooldown - dt).max(0.0);
-            if p1_input.shoot_pressed
-                && self.players[0].shoot_cooldown <= 0.0
-                && self.players[0].bullets_remaining > 0
-                && self.players[0].reload_timer <= 0.0
-            {
-                let aim = self.players[0].aim_dir;
-                let color = self.players[0].color;
-                let spawn = Vector3::new(
-                    self.players[0].position.x + aim.x * 0.5,
-                    self.players[0].position.y + 1.1 + aim.y * 0.5,
-                    self.players[0].position.z,
-                );
-                self.bullets.push(Bullet::new(spawn, aim, 0, color));
-                self.players[0].bullets_remaining -= 1;
-                self.players[0].shoot_cooldown = SHOOT_COOLDOWN;
-                if self.players[0].bullets_remaining == 0 {
-                    self.players[0].reload_timer = RELOAD_TIME;
-                }
-            }
-        }
-
-        for player in self.players.iter_mut() {
-            player.hit_flash_timer = (player.hit_flash_timer - dt).max(0.0);
-        }
-
-        let bullet_events = update_bullets(&mut self.bullets, &mut self.players, &self.level.platforms, dt);
-        for ev in &bullet_events {
-            match ev {
-                GameEvent::TerrainHit { x, y, z, r, g, b } => {
-                    spawn_terrain_hit(&mut self.particles, &mut self.rng,
-                        Vector3::new(*x, *y, *z), Color::new(*r, *g, *b, 255));
-                }
-                GameEvent::PlayerHit { x, y, z, r, g, b } => {
-                    spawn_player_hit(&mut self.particles, &mut self.rng,
-                        Vector3::new(*x, *y, *z), Color::new(*r, *g, *b, 255));
-                }
-                _ => {}
-            }
-        }
-        update_particles(&mut self.particles, dt);
-
-        for i in 0..self.players.len() {
-            if !self.players[i].alive { continue; }
-            if self.players[i].hp <= 0.0 || self.players[i].position.y < -10.0 {
-                self.kill_player_local(i);
-            }
-        }
-
-        if self.alive_count() <= 1 {
-            if let Some(winner_idx) = self.last_alive() {
-                let name = self.players[winner_idx].name.clone();
-                let c = self.players[winner_idx].color;
-                self.scores[winner_idx] += 1;
-                self.state = GameState::RoundEnd {
-                    winner_index: winner_idx as u8,
-                    winner_name: name,
-                    winner_color: (c.r, c.g, c.b),
-                    timer: ROUND_END_DURATION,
-                };
-            } else {
-                self.reset_round();
-            }
-        }
+        spawn_from_events(&snap.events, &mut self.particles, &mut self.rng);
     }
 
 }

@@ -46,6 +46,9 @@ pub fn update_bullets(
         }
 
         // Player collision
+        let damage_bonus = if bullet.owner < players.len() {
+            players[bullet.owner].stats.bullet_damage_bonus
+        } else { 0.0 };
         for (i, player) in players.iter_mut().enumerate() {
             if i == bullet.owner || !player.alive {
                 continue;
@@ -61,7 +64,7 @@ pub fn update_bullets(
                     b: player.color.b,
                 });
                 player.hit_flash_timer = HIT_FLASH_DURATION;
-                player.hp = (player.hp - BULLET_DAMAGE).max(0.0);
+                player.hp = (player.hp - (BULLET_DAMAGE + damage_bonus)).max(0.0);
                 bullet.lifetime = 0.0;
                 break;
             }

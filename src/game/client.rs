@@ -12,6 +12,7 @@ use crate::game::world::World;
 use crate::lobby::client::GameClientParts;
 use crate::lobby::protocol::{self, ServerIncoming};
 use crate::player::input;
+use crate::render::cards::card_slot_from_mouse;
 
 pub struct GameClient {
     pub world: World,
@@ -156,20 +157,3 @@ impl Drop for GameClient {
     }
 }
 
-/// Check if mouse click lands on one of the 3 card rects. Returns card slot 0-2.
-fn card_slot_from_mouse(mouse: Vector2, screen_w: f32, screen_h: f32) -> Option<u8> {
-    let card_w: f32 = 180.0;
-    let card_h: f32 = 250.0;
-    let gap: f32 = 40.0;
-    let total_w = 3.0 * card_w + 2.0 * gap;
-    let start_x = (screen_w - total_w) / 2.0;
-    let card_y = screen_h * 0.35;
-
-    for i in 0..3u8 {
-        let cx = start_x + i as f32 * (card_w + gap);
-        if mouse.x >= cx && mouse.x <= cx + card_w && mouse.y >= card_y && mouse.y <= card_y + card_h {
-            return Some(i);
-        }
-    }
-    None
-}

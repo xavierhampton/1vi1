@@ -21,6 +21,12 @@ pub fn update(player: &mut Player, input: &PlayerInput, platforms: &[Platform], 
     player.grounded = false;
     let mut jumped = false;
 
+    // Effective stats from powerups
+    let speed_mult = player.stats.move_speed_mult;
+    let eff_move_speed = MOVE_SPEED * speed_mult;
+    let eff_bhop_speed = MAX_BHOP_SPEED * speed_mult;
+    let eff_max_air_jumps = MAX_AIR_JUMPS + player.stats.extra_air_jumps;
+
     // Bhop: if holding jump on landing, skip ground friction entirely
     let is_bhop_frame = input.jump_held && prev_grounded;
 
@@ -28,7 +34,7 @@ pub fn update(player: &mut Player, input: &PlayerInput, platforms: &[Platform], 
         // Ground movement: full accel/decel with speed cap
         if input.move_dir != 0.0 {
             player.velocity.x += input.move_dir * MOVE_ACCEL * dt;
-            player.velocity.x = player.velocity.x.clamp(-MOVE_SPEED, MOVE_SPEED);
+            player.velocity.x = player.velocity.x.clamp(-eff_move_speed, eff_move_speed);
         } else {
             let decel = MOVE_DECEL * dt;
             if player.velocity.x > 0.0 {
@@ -44,7 +50,7 @@ pub fn update(player: &mut Player, input: &PlayerInput, platforms: &[Platform], 
                 || (input.move_dir < 0.0 && player.velocity.x > 0.0);
             let accel = if against { AIR_COUNTER_ACCEL } else { AIR_ACCEL };
             player.velocity.x += input.move_dir * accel * dt;
-            player.velocity.x = player.velocity.x.clamp(-MAX_BHOP_SPEED, MAX_BHOP_SPEED);
+            player.velocity.x = player.velocity.x.clamp(-eff_bhop_speed, eff_bhop_speed);
         }
     }
 
@@ -57,7 +63,7 @@ pub fn update(player: &mut Player, input: &PlayerInput, platforms: &[Platform], 
     // Jump (bunny hop: holding jump auto-jumps on landing)
     let jump_trigger = input.jump_pressed || (input.jump_held && prev_grounded);
     let can_ground_jump = prev_grounded || player.coyote_timer > 0.0;
-    let can_air_jump = input.jump_pressed && player.air_jumps < MAX_AIR_JUMPS;
+    let can_air_jump = input.jump_pressed && player.air_jumps < eff_max_air_jumps;
     if jump_trigger && can_ground_jump {
         player.velocity.y = JUMP_VELOCITY;
         player.coyote_timer = 0.0;
@@ -65,7 +71,7 @@ pub fn update(player: &mut Player, input: &PlayerInput, platforms: &[Platform], 
         player.jump_cut_applied = false;
         player.air_jumps = 0;
         // Bhop: small speed boost in movement direction
-        if input.move_dir != 0.0 && player.velocity.x.abs() < MAX_BHOP_SPEED {
+        if input.move_dir != 0.0 && player.velocity.x.abs() < eff_bhop_speed {
             player.velocity.x += input.move_dir * BHOP_SPEED_BOOST;
         }
     } else if can_air_jump {

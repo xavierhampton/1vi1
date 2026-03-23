@@ -5,13 +5,14 @@ use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
 
 use raylib::prelude::*;
 
-use crate::combat::particles::{spawn_death_explosion, spawn_player_hit, spawn_terrain_hit, update_particles};
+use crate::combat::particles::{spawn_from_events, update_particles};
 use crate::game::net::{self, GameEvent, WorldSnapshot};
 use crate::game::state::GameState;
 use crate::game::world::World;
 use crate::lobby::protocol::ClientIncoming;
 use crate::lobby::server::{GameServerParts, ServerEvent};
 use crate::player::input::{self, PlayerInput};
+use crate::render::cards::card_slot_from_mouse;
 
 const BROADCAST_RATE: f32 = 1.0 / 60.0;
 
@@ -139,23 +140,7 @@ impl GameServer {
         }
 
         // Spawn particles locally on host from events
-        for ev in &game_events {
-            match ev {
-                GameEvent::PlayerHit { x, y, z, r, g, b } => {
-                    spawn_player_hit(&mut self.world.particles, &mut self.world.rng,
-                        Vector3::new(*x, *y, *z), Color::new(*r, *g, *b, 255));
-                }
-                GameEvent::PlayerDied { x, y, z, r, g, b } => {
-                    spawn_death_explosion(&mut self.world.particles, &mut self.world.rng,
-                        Vector3::new(*x, *y, *z), Color::new(*r, *g, *b, 255));
-                }
-                GameEvent::TerrainHit { x, y, z, r, g, b } => {
-                    spawn_terrain_hit(&mut self.world.particles, &mut self.world.rng,
-                        Vector3::new(*x, *y, *z), Color::new(*r, *g, *b, 255));
-                }
-                GameEvent::BulletFired { .. } => {}
-            }
-        }
+        spawn_from_events(&game_events, &mut self.world.particles, &mut self.world.rng);
 
         self.pending_events.extend(game_events);
 
@@ -195,20 +180,3 @@ impl Drop for GameServer {
     }
 }
 
-/// Check if mouse click lands on one of the 3 card rects. Returns card slot 0-2.
-fn card_slot_from_mouse(mouse: Vector2, screen_w: f32, screen_h: f32) -> Option<u8> {
-    let card_w: f32 = 180.0;
-    let card_h: f32 = 250.0;
-    let gap: f32 = 40.0;
-    let total_w = 3.0 * card_w + 2.0 * gap;
-    let start_x = (screen_w - total_w) / 2.0;
-    let card_y = screen_h * 0.35;
-
-    for i in 0..3u8 {
-        let cx = start_x + i as f32 * (card_w + gap);
-        if mouse.x >= cx && mouse.x <= cx + card_w && mouse.y >= card_y && mouse.y <= card_y + card_h {
-            return Some(i);
-        }
-    }
-    None
-}

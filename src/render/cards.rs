@@ -4,9 +4,9 @@ use crate::game::cards::CARD_CATALOG;
 use crate::game::state::GameState;
 use crate::game::world::World;
 
-const CARD_W: f32 = 180.0;
-const CARD_H: f32 = 250.0;
-const CARD_GAP: f32 = 40.0;
+const CARD_W: f32 = 220.0;
+const CARD_H: f32 = 310.0;
+const CARD_GAP: f32 = 44.0;
 
 const ENTRANCE_DURATION: f32 = 0.8;
 const EXIT_DURATION: f32 = 0.8;
@@ -97,6 +97,17 @@ fn card_rects(screen_w: f32, screen_h: f32) -> [(f32, f32); 3] {
         (start_x + CARD_W + CARD_GAP, card_y),
         (start_x + 2.0 * (CARD_W + CARD_GAP), card_y),
     ]
+}
+
+pub fn card_slot_from_mouse(mouse: Vector2, screen_w: f32, screen_h: f32) -> Option<u8> {
+    let rects = card_rects(screen_w, screen_h);
+    for i in 0..3u8 {
+        let (cx, cy) = rects[i as usize];
+        if mouse.x >= cx && mouse.x <= cx + CARD_W && mouse.y >= cy && mouse.y <= cy + CARD_H {
+            return Some(i);
+        }
+    }
+    None
 }
 
 pub fn draw_card_pick(

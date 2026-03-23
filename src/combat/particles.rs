@@ -88,6 +88,28 @@ pub fn spawn_player_hit(particles: &mut Vec<Particle>, rng: &mut Rng, pos: Vecto
     }
 }
 
+pub fn spawn_from_events(
+    events: &[crate::game::net::GameEvent],
+    particles: &mut Vec<Particle>,
+    rng: &mut Rng,
+) {
+    use crate::game::net::GameEvent;
+    for ev in events {
+        match ev {
+            GameEvent::PlayerHit { x, y, z, r, g, b } => {
+                spawn_player_hit(particles, rng, Vector3::new(*x, *y, *z), Color::new(*r, *g, *b, 255));
+            }
+            GameEvent::PlayerDied { x, y, z, r, g, b } => {
+                spawn_death_explosion(particles, rng, Vector3::new(*x, *y, *z), Color::new(*r, *g, *b, 255));
+            }
+            GameEvent::TerrainHit { x, y, z, r, g, b } => {
+                spawn_terrain_hit(particles, rng, Vector3::new(*x, *y, *z), Color::new(*r, *g, *b, 255));
+            }
+            GameEvent::BulletFired { .. } => {}
+        }
+    }
+}
+
 pub fn spawn_death_explosion(particles: &mut Vec<Particle>, rng: &mut Rng, pos: Vector3, color: Color) {
     // Big burst of player-colored particles
     for _ in 0..40 {
