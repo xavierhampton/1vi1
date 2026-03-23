@@ -8,6 +8,11 @@ pub fn draw_hud(
     d: &mut RaylibDrawHandle, world: &World, camera: Camera3D,
     render_w: i32, render_h: i32, local_player: u8,
 ) {
+    let mouse = d.get_mouse_position();
+
+    // Tooltip to draw last (on top of everything)
+    let mut tooltip: Option<(&str, &str, (u8, u8, u8), f32, f32)> = None;
+
     // ── Per-player floating HUD (name, HP, ammo — above head) ───────────
     for player in &world.players {
         if !player.alive { continue; }
@@ -63,7 +68,6 @@ pub fn draw_hud(
 
     // ── Local player HUD (bottom center) ─────────────────────────────────
     if let Some(local_p) = world.players.get(local_player as usize) {
-        // Collect abilities (active, circles) and powerups (passive, small pips)
         let abilities: Vec<_> = local_p.cards.iter()
             .filter(|(c, _)| CARD_CATALOG[*c as u8 as usize].is_ability())
             .collect();
@@ -71,10 +75,11 @@ pub fn draw_hud(
             .filter(|(c, _)| CARD_CATALOG[*c as u8 as usize].is_powerup())
             .collect();
 
+        let icon_radius: f32 = 30.0;
+        let ring_thick: f32 = 3.0;
+
         // ── Ability circles (bottom center) ──
         if !abilities.is_empty() {
-            let radius: f32 = 30.0;
-            let ring_thick: f32 = 3.0;
             let spacing: f32 = 72.0;
             let count = abilities.len();
             let total_w = (count - 1) as f32 * spacing;
@@ -98,13 +103,13 @@ pub fn draw_hud(
                 let center = Vector2::new(cx, cy);
                 let ready = *cooldown <= 0.0;
 
-                d.draw_circle(cx as i32, cy as i32, radius,
+                d.draw_circle(cx as i32, cy as i32, icon_radius,
                     Color::new(cr / 8 + 8, cg / 8 + 8, cb / 8 + 8, 210));
 
                 if ready {
-                    d.draw_circle(cx as i32, cy as i32, radius - ring_thick,
+                    d.draw_circle(cx as i32, cy as i32, icon_radius - ring_thick,
                         Color::new(cr, cg, cb, 35));
-                    d.draw_ring(center, radius - ring_thick, radius, 0.0, 360.0, 36,
+                    d.draw_ring(center, icon_radius - ring_thick, icon_radius, 0.0, 360.0, 36,
                         Color::new(cr, cg, cb, 200));
 
                     let glyph = format!("{}", def.icon_glyph);
@@ -118,10 +123,10 @@ pub fn draw_hud(
                     let start_angle = 90.0 - sweep;
                     let end_angle = 90.0;
 
-                    d.draw_ring(center, radius - ring_thick, radius, 0.0, 360.0, 36,
+                    d.draw_ring(center, icon_radius - ring_thick, icon_radius, 0.0, 360.0, 36,
                         Color::new(cr, cg, cb, 20));
                     if sweep > 0.5 {
-                        d.draw_ring(center, radius - ring_thick, radius, start_angle, end_angle, 36,
+                        d.draw_ring(center, icon_radius - ring_thick, icon_radius, start_angle, end_angle, 36,
                             Color::new(cr, cg, cb, 140));
                     }
 
@@ -131,36 +136,29 @@ pub fn draw_hud(
                     d.draw_text(&cd_text, cx as i32 - cd_w / 2, cy as i32 - cd_font / 2,
                         cd_font, Color::new(cr, cg, cb, 160));
                 }
+
+                // Hover check for tooltip
+                let dx = mouse.x - cx;
+                let dy = mouse.y - cy;
+                if dx * dx + dy * dy <= icon_radius * icon_radius {
+                    tooltip = Some((def.name, def.description, def.color, cx, cy));
+                }
             }
         }
 
-        // ── Powerup icons (bottom left, same size as ability circles) ──
+        // ── Powerup icons (bottom left, vertical stack) ──
         if !powerups.is_empty() {
-            let radius: f32 = 30.0;
-            let ring_thick: f32 = 3.0;
-            let spacing: f32 = 72.0;
+            let spacing_y: f32 = 72.0;
             let count = powerups.len();
-            let total_w = (count - 1) as f32 * spacing;
-            let base_cx = render_w as f32 / 2.0 - total_w / 2.0;
-            let base_cy = render_h as f32 - 48.0;
+            let total_h = (count - 1) as f32 * spacing_y;
+            let cx = 48.0;
+            let base_cy = render_h as f32 - 48.0 - total_h;
 
-            // Offset left of abilities (or centered if no abilities)
-            let offset_x = if abilities.is_empty() {
-                0.0
-            } else {
-                let ab_count = abilities.len();
-                let ab_total = (ab_count - 1) as f32 * spacing;
-                let ab_left = render_w as f32 / 2.0 - ab_total / 2.0 - radius;
-                // Place powerups to the left of the ability bar
-                let pw_right = base_cx + total_w + radius;
-                ab_left - pw_right - 24.0
-            };
-
-            // Connecting rail
+            // Connecting rail (vertical)
             if count > 1 {
                 d.draw_rectangle(
-                    (base_cx + offset_x) as i32, (base_cy - 1.0) as i32,
-                    total_w as i32, 2,
+                    (cx - 1.0) as i32, base_cy as i32,
+                    2, total_h as i32,
                     Color::new(255, 255, 255, 18),
                 );
             }
@@ -168,15 +166,14 @@ pub fn draw_hud(
             for (j, (card_id, _)) in powerups.iter().enumerate() {
                 let def = &CARD_CATALOG[*card_id as u8 as usize];
                 let (cr, cg, cb) = def.color;
-                let cx = base_cx + offset_x + j as f32 * spacing;
-                let cy = base_cy;
+                let cy = base_cy + j as f32 * spacing_y;
                 let center = Vector2::new(cx, cy);
 
-                d.draw_circle(cx as i32, cy as i32, radius,
+                d.draw_circle(cx as i32, cy as i32, icon_radius,
                     Color::new(cr / 8 + 8, cg / 8 + 8, cb / 8 + 8, 210));
-                d.draw_circle(cx as i32, cy as i32, radius - ring_thick,
+                d.draw_circle(cx as i32, cy as i32, icon_radius - ring_thick,
                     Color::new(cr, cg, cb, 35));
-                d.draw_ring(center, radius - ring_thick, radius, 0.0, 360.0, 36,
+                d.draw_ring(center, icon_radius - ring_thick, icon_radius, 0.0, 360.0, 36,
                     Color::new(cr, cg, cb, 200));
 
                 let glyph = format!("{}", def.icon_glyph);
@@ -184,6 +181,13 @@ pub fn draw_hud(
                 let g_w = d.measure_text(&glyph, g_font);
                 d.draw_text(&glyph, cx as i32 - g_w / 2, cy as i32 - g_font / 2,
                     g_font, Color::new(255, 255, 255, 240));
+
+                // Hover check for tooltip
+                let dx = mouse.x - cx;
+                let dy = mouse.y - cy;
+                if dx * dx + dy * dy <= icon_radius * icon_radius {
+                    tooltip = Some((def.name, def.description, def.color, cx, cy));
+                }
             }
         }
     }
@@ -240,5 +244,38 @@ pub fn draw_hud(
         let color = Color::new(winner_color.0, winner_color.1, winner_color.2, 255);
         d.draw_text(&text, render_w / 2 - text_w / 2, render_h / 2 - font_size / 2,
             font_size, color);
+    }
+
+    // ── Tooltip (drawn last so it's on top) ──────────────────────────────
+    if let Some((name, desc, (cr, cg, cb), icon_cx, icon_cy)) = tooltip {
+        let pad_x: i32 = 10;
+        let pad_y: i32 = 8;
+        let name_font = 18;
+        let desc_font = 14;
+        let name_w = d.measure_text(name, name_font);
+        let desc_w = d.measure_text(desc, desc_font);
+        let inner_w = name_w.max(desc_w);
+        let box_w = inner_w + pad_x * 2;
+        let box_h = name_font + desc_font + pad_y * 3;
+
+        // Position above the icon, centered horizontally, clamped to screen
+        let mut tx = icon_cx as i32 - box_w / 2;
+        let mut ty = icon_cy as i32 - 44 - box_h;
+        tx = tx.clamp(4, render_w - box_w - 4);
+        ty = ty.clamp(4, render_h - box_h - 4);
+
+        // Background
+        d.draw_rectangle(tx, ty, box_w, box_h, Color::new(12, 12, 14, 230));
+        // Border
+        d.draw_rectangle_lines_ex(
+            Rectangle::new(tx as f32, ty as f32, box_w as f32, box_h as f32),
+            1.0, Color::new(cr / 2 + 40, cg / 2 + 40, cb / 2 + 40, 180),
+        );
+        // Name
+        d.draw_text(name, tx + pad_x, ty + pad_y, name_font,
+            Color::new(cr, cg, cb, 255));
+        // Description
+        d.draw_text(desc, tx + pad_x, ty + pad_y + name_font + pad_y, desc_font,
+            Color::new(180, 180, 180, 220));
     }
 }
