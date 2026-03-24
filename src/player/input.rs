@@ -6,6 +6,7 @@ pub struct PlayerInput {
     pub jump_pressed: bool,
     pub jump_held: bool,
     pub shoot_pressed: bool,
+    pub shoot_held: bool,
     pub ability_pressed: bool,
     pub aim_dir: Vector2,
     pub cursor_x: f32, // normalized 0..1 screen coords
@@ -20,6 +21,7 @@ impl PlayerInput {
             jump_pressed: false,
             jump_held: false,
             shoot_pressed: false,
+            shoot_held: false,
             ability_pressed: false,
             aim_dir: Vector2::new(1.0, 0.0),
             cursor_x: 0.5,
@@ -44,6 +46,7 @@ pub fn read_input(rl: &RaylibHandle, camera: &Camera3D, player_center: Vector2) 
         || rl.is_key_down(KeyboardKey::KEY_SPACE);
 
     let shoot_pressed = rl.is_mouse_button_down(MouseButton::MOUSE_BUTTON_LEFT);
+    let shoot_held = shoot_pressed;
     let ability_pressed = rl.is_mouse_button_pressed(MouseButton::MOUSE_BUTTON_RIGHT);
 
     // Mouse aim: cast ray from screen to Z=0 plane
@@ -80,6 +83,7 @@ pub fn read_input(rl: &RaylibHandle, camera: &Camera3D, player_center: Vector2) 
         jump_pressed,
         jump_held,
         shoot_pressed,
+        shoot_held,
         ability_pressed,
         aim_dir,
         cursor_x,

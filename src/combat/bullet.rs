@@ -10,6 +10,7 @@ pub const BULLET_LIFETIME: f32 = 3.0;
 pub const BULLET_DAMAGE: f32 = 25.0;
 pub const SHOOT_COOLDOWN: f32 = 0.3;
 
+#[derive(Clone)]
 pub struct Bullet {
     pub position: Vector3,
     pub prev_position: Vector3,
@@ -24,6 +25,12 @@ pub struct Bullet {
     pub homing: bool,
     pub piercing: bool,
     pub explosive: bool,
+    pub poison: bool,
+    pub gravity_mult: f32,
+    pub phantom: bool,
+    pub split_on_hit: bool,
+    pub hot_potato: bool,
+    pub sticky: bool,
 }
 
 impl Bullet {
@@ -42,6 +49,12 @@ impl Bullet {
             homing: false,
             piercing: false,
             explosive: false,
+            poison: false,
+            gravity_mult: 1.0,
+            phantom: false,
+            split_on_hit: false,
+            hot_potato: false,
+            sticky: false,
         }
     }
 
@@ -68,6 +81,12 @@ impl Bullet {
             homing: stats.homing,
             piercing: stats.piercing,
             explosive: stats.explosive,
+            poison: stats.poison,
+            gravity_mult: stats.bullet_gravity_mult,
+            phantom: stats.phantom,
+            split_on_hit: stats.split_shot,
+            hot_potato: stats.hot_potato,
+            sticky: stats.sticky,
         }
     }
 

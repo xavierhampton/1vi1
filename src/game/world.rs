@@ -4,7 +4,7 @@ use crate::combat::bullet::{Bullet, SHOOT_COOLDOWN};
 use crate::combat::combat::update_bullets;
 use crate::combat::particles::{spawn_from_events, Particle, Rng};
 use crate::game::cards;
-use crate::game::net::{BulletSnapshot, GameEvent, PlayerSnapshot, WorldSnapshot};
+use crate::game::net::{BulletSnapshot, CloneSnapshot, GameEvent, GravityWellSnapshot, PlayerSnapshot, StickyBombSnapshot, WorldSnapshot};
 use crate::game::state::GameState;
 use crate::level::level::{self, Level};
 use crate::lobby::state::LobbyState;
@@ -28,6 +28,41 @@ const STOMP_RADIUS: f32 = 3.0;
 const STOMP_DAMAGE: f32 = 35.0;
 const STOMP_SLAM_SPEED: f32 = 35.0;
 
+const GRAVITY_WELL_RADIUS: f32 = 6.0;
+const GRAVITY_WELL_LIFETIME: f32 = 4.0;
+const GRAVITY_WELL_FORCE: f32 = 15.0;
+const CLONE_SPEED: f32 = 10.0;
+const CLONE_LIFETIME: f32 = 6.0;
+const CLONE_DAMAGE: f32 = 50.0;
+const CLONE_EXPLODE_RADIUS: f32 = 3.5;
+const STICKY_FUSE: f32 = 2.0;
+const STICKY_EXPLODE_RADIUS: f32 = 3.0;
+const LEECH_FIELD_RADIUS: f32 = 5.0;
+const LEECH_FIELD_DPS: f32 = 2.0;
+
+pub struct GravityWellEntity {
+    pub position: Vector3,
+    pub owner: usize,
+    pub lifetime: f32,
+}
+
+pub struct CloneEntity {
+    pub position: Vector3,
+    pub velocity: Vector3,
+    pub owner: usize,
+    pub lifetime: f32,
+    pub color: Color,
+}
+
+pub struct StickyBomb {
+    pub position: Vector3,
+    pub owner: usize,
+    pub damage: f32,
+    pub fuse: f32,
+    pub stuck_to: Option<usize>,
+    pub color: Color,
+}
+
 pub struct World {
     pub players: Vec<Player>,
     pub bullets: Vec<Bullet>,
@@ -38,6 +73,39 @@ pub struct World {
     pub rng: Rng,
     pub cursor_positions: Vec<(f32, f32)>,
     pub card_hover: u8,
+    pub gravity_wells: Vec<GravityWellEntity>,
+    pub clones: Vec<CloneEntity>,
+    pub sticky_bombs: Vec<StickyBomb>,
+}
+
+/// 2D ray-AABB intersection (XY plane). Returns t of first hit, or None.
+fn ray_aabb_t(ox: f32, oy: f32, dx: f32, dy: f32, aabb: &crate::physics::collision::AABB) -> Option<f32> {
+    let mut tmin = f32::NEG_INFINITY;
+    let mut tmax = f32::INFINITY;
+
+    if dx.abs() > 1e-8 {
+        let t1 = (aabb.min.x - ox) / dx;
+        let t2 = (aabb.max.x - ox) / dx;
+        tmin = tmin.max(t1.min(t2));
+        tmax = tmax.min(t1.max(t2));
+    } else if ox < aabb.min.x || ox > aabb.max.x {
+        return None;
+    }
+
+    if dy.abs() > 1e-8 {
+        let t1 = (aabb.min.y - oy) / dy;
+        let t2 = (aabb.max.y - oy) / dy;
+        tmin = tmin.max(t1.min(t2));
+        tmax = tmax.min(t1.max(t2));
+    } else if oy < aabb.min.y || oy > aabb.max.y {
+        return None;
+    }
+
+    if tmin <= tmax && tmax > 0.0 {
+        Some(if tmin > 0.0 { tmin } else { tmax })
+    } else {
+        None
+    }
 }
 
 impl World {
@@ -68,6 +136,9 @@ impl World {
             scores: vec![0; count],
             rng,
             card_hover: 0xFF,
+            gravity_wells: Vec::new(),
+            clones: Vec::new(),
+            sticky_bombs: Vec::new(),
         }
     }
 
@@ -83,6 +154,15 @@ impl World {
             player.shoot_cooldown = 0.0;
             player.aim_dir = Vector2::new(if i % 2 == 0 { 1.0 } else { -1.0 }, 0.0);
             player.stomp_active = false;
+            player.laser_active = false;
+            player.poison_timer = 0.0;
+            player.ghost_timer = 0.0;
+            player.overclock_timer = 0.0;
+            player.overclock_crash_timer = 0.0;
+            player.adrenaline_timer = 0.0;
+            player.upsized_stacks = 0;
+            player.rewind_history.clear();
+            player.rewind_sample_timer = 0.0;
             for (_, cd) in player.cards.iter_mut() {
                 *cd = 0.0;
             }
@@ -93,6 +173,9 @@ impl World {
         }
         self.bullets.clear();
         self.particles.clear();
+        self.gravity_wells.clear();
+        self.clones.clear();
+        self.sticky_bombs.clear();
         self.state = GameState::RoundStart { timer: COUNTDOWN_DURATION };
     }
 
@@ -335,8 +418,20 @@ impl World {
             }
             let inp = inputs.get(i).cloned().unwrap_or_else(PlayerInput::empty);
 
+            // Upsized stacks → bigger hitbox
+            let upsized_mult = 1.0 + 0.05 * self.players[i].upsized_stacks as f32;
+            self.players[i].size.x = 0.6 * self.players[i].stats.size_mult * upsized_mult;
+            self.players[i].size.y = 1.6 * self.players[i].stats.size_mult * upsized_mult;
+            self.players[i].size.z = 0.6 * self.players[i].stats.size_mult * upsized_mult;
+
+            // Compute speed multiplier from active buffs/debuffs
+            let mut speed_mult = 1.0_f32;
+            if self.players[i].overclock_timer > 0.0 { speed_mult *= 2.0; }
+            if self.players[i].overclock_crash_timer > 0.0 { speed_mult *= 0.6; }
+            if self.players[i].adrenaline_timer > 0.0 { speed_mult *= 1.4; }
+
             let was_airborne = !self.players[i].grounded;
-            movement::update(&mut self.players[i], &inp, &self.level.platforms, dt);
+            movement::update_with_speed(&mut self.players[i], &inp, &self.level.platforms, dt, speed_mult);
             self.players[i].aim_dir = inp.aim_dir;
 
             // Stomp: force slam when falling after hop
@@ -379,67 +474,152 @@ impl World {
                 }
             }
 
-            // Shoot
-            self.players[i].shoot_cooldown = (self.players[i].shoot_cooldown - dt).max(0.0);
-            if inp.shoot_pressed
-                && self.players[i].shoot_cooldown <= 0.0
-                && self.players[i].bullets_remaining > 0
-                && self.players[i].reload_timer <= 0.0
-            {
-                let aim = self.players[i].aim_dir;
-                let color = self.players[i].color;
-                let spawn = Vector3::new(
-                    self.players[i].position.x + aim.x * 0.5,
-                    self.players[i].position.y + 1.1 + aim.y * 0.5,
-                    self.players[i].position.z,
-                );
-                let stats = self.players[i].stats.clone();
-
-                if stats.shotgun {
-                    // Shotgun: dump all remaining ammo in one blast with short range
-                    let count = self.players[i].bullets_remaining;
-                    let total_spread = std::f32::consts::PI / 6.0; // 30° total fan
-                    for s in 0..count {
-                        let t = if count > 1 {
-                            (s as f32 / (count - 1) as f32) - 0.5
-                        } else {
-                            0.0
-                        };
-                        let angle = t * total_spread;
-                        let cos_a = angle.cos();
-                        let sin_a = angle.sin();
-                        let rotated = Vector2::new(
-                            aim.x * cos_a - aim.y * sin_a,
-                            aim.x * sin_a + aim.y * cos_a,
-                        );
-                        self.bullets.push(Bullet::new_with_stats(spawn, rotated, i, color, &stats));
+            // Shoot / Laser
+            if self.players[i].stats.laser {
+                self.players[i].laser_active = false;
+                if inp.shoot_held
+                    && self.players[i].bullets_remaining > 0
+                    && self.players[i].reload_timer <= 0.0
+                {
+                    self.players[i].laser_active = true;
+                    let stats = self.players[i].stats.clone();
+                    let drain_interval = 0.4 * stats.shoot_cooldown_mult;
+                    self.players[i].shoot_cooldown += dt;
+                    if self.players[i].shoot_cooldown >= drain_interval {
+                        self.players[i].shoot_cooldown -= drain_interval;
+                        self.players[i].bullets_remaining -= 1;
+                        if self.players[i].bullets_remaining <= 0 {
+                            self.players[i].bullets_remaining = 0;
+                            self.players[i].reload_timer = RELOAD_TIME * stats.reload_time_mult;
+                            self.players[i].laser_active = false;
+                        }
                     }
-                    self.players[i].bullets_remaining = 0;
-                } else {
-                    // Normal shot
-                    self.bullets.push(Bullet::new_with_stats(spawn, aim, i, color, &stats));
-                    self.players[i].bullets_remaining -= 1;
+                    let aim = self.players[i].aim_dir;
+                    let ox = self.players[i].position.x + aim.x * 0.5;
+                    let oy = self.players[i].position.y + 1.1 + aim.y * 0.5;
+                    let dps = 40.0 * stats.bullet_damage_mult;
+                    let beam_width = 0.08 * stats.bullet_radius_mult;
 
-                    // Triple shot: 2 extra bullets at ±45°
+                    // Build beam directions (triple_shot = 3 beams)
+                    let mut aims: Vec<Vector2> = vec![aim];
                     if stats.triple_shot {
-                        let angle = std::f32::consts::PI / 4.0;
+                        let angle = std::f32::consts::PI / 12.0;
                         for &sign in &[-1.0_f32, 1.0] {
                             let a = sign * angle;
-                            let cos_a = a.cos();
-                            let sin_a = a.sin();
+                            aims.push(Vector2::new(
+                                aim.x * a.cos() - aim.y * a.sin(),
+                                aim.x * a.sin() + aim.y * a.cos(),
+                            ));
+                        }
+                    }
+
+                    for beam_aim in &aims {
+                        let mut max_t = 50.0_f32;
+                        // Platform collision (phantom = pass through)
+                        if !stats.phantom {
+                            for platform in &self.level.platforms {
+                                if let Some(t) = ray_aabb_t(ox, oy, beam_aim.x, beam_aim.y, &platform.aabb) {
+                                    if t > 0.0 && t < max_t { max_t = t; }
+                                }
+                            }
+                        }
+                        // Hit players (piercing = hit all in line)
+                        let mut hit_players: Vec<usize> = Vec::new();
+                        for j in 0..self.players.len() {
+                            if j == i || !self.players[j].alive || self.players[j].ghost_timer > 0.0 { continue; }
+                            let mut paabb = self.players[j].aabb();
+                            paabb.min.x -= beam_width;
+                            paabb.min.y -= beam_width;
+                            paabb.max.x += beam_width;
+                            paabb.max.y += beam_width;
+                            if let Some(t) = ray_aabb_t(ox, oy, beam_aim.x, beam_aim.y, &paabb) {
+                                if t > 0.0 && t < max_t {
+                                    hit_players.push(j);
+                                    if !stats.piercing { max_t = t; }
+                                }
+                            }
+                        }
+                        for j in &hit_players {
+                            self.players[*j].hp = (self.players[*j].hp - dps * dt).max(0.0);
+                            self.players[*j].hit_flash_timer = HIT_FLASH_DURATION;
+                            if stats.poison { self.players[*j].poison_timer = 3.0; }
+                            if stats.bounceback {
+                                let dx = self.players[*j].position.x - self.players[i].position.x;
+                                let dy = self.players[*j].position.y - self.players[i].position.y;
+                                let d = (dx * dx + dy * dy).sqrt().max(0.01);
+                                self.players[*j].velocity.x += (dx / d) * 8.0 * dt;
+                                self.players[*j].velocity.y += (dy / d) * 8.0 * dt;
+                            }
+                        }
+                        if stats.vampire_heal > 0.0 && !hit_players.is_empty() {
+                            self.players[i].hp = (self.players[i].hp + stats.vampire_heal * dt * 2.0).min(self.players[i].max_hp);
+                        }
+                    }
+                } else {
+                    self.players[i].shoot_cooldown = 0.0;
+                }
+            } else {
+                self.players[i].laser_active = false;
+                self.players[i].shoot_cooldown = (self.players[i].shoot_cooldown - dt).max(0.0);
+                if inp.shoot_pressed
+                    && self.players[i].shoot_cooldown <= 0.0
+                    && self.players[i].bullets_remaining > 0
+                    && self.players[i].reload_timer <= 0.0
+                {
+                    let aim = self.players[i].aim_dir;
+                    let color = self.players[i].color;
+                    let spawn = Vector3::new(
+                        self.players[i].position.x + aim.x * 0.5,
+                        self.players[i].position.y + 1.1 + aim.y * 0.5,
+                        self.players[i].position.z,
+                    );
+                    let stats = self.players[i].stats.clone();
+
+                    if stats.shotgun {
+                        let count = self.players[i].bullets_remaining;
+                        let total_spread = std::f32::consts::PI / 6.0;
+                        for s in 0..count {
+                            let t = if count > 1 {
+                                (s as f32 / (count - 1) as f32) - 0.5
+                            } else {
+                                0.0
+                            };
+                            let angle = t * total_spread;
+                            let cos_a = angle.cos();
+                            let sin_a = angle.sin();
                             let rotated = Vector2::new(
                                 aim.x * cos_a - aim.y * sin_a,
                                 aim.x * sin_a + aim.y * cos_a,
                             );
                             self.bullets.push(Bullet::new_with_stats(spawn, rotated, i, color, &stats));
                         }
-                    }
-                }
+                        self.players[i].bullets_remaining = 0;
+                    } else {
+                        self.bullets.push(Bullet::new_with_stats(spawn, aim, i, color, &stats));
+                        self.players[i].bullets_remaining -= 1;
 
-                self.players[i].shoot_cooldown = SHOOT_COOLDOWN * stats.shoot_cooldown_mult;
-                if self.players[i].bullets_remaining <= 0 {
-                    self.players[i].bullets_remaining = 0;
-                    self.players[i].reload_timer = RELOAD_TIME;
+                        if stats.triple_shot {
+                            let angle = std::f32::consts::PI / 4.0;
+                            for &sign in &[-1.0_f32, 1.0] {
+                                let a = sign * angle;
+                                let cos_a = a.cos();
+                                let sin_a = a.sin();
+                                let rotated = Vector2::new(
+                                    aim.x * cos_a - aim.y * sin_a,
+                                    aim.x * sin_a + aim.y * cos_a,
+                                );
+                                self.bullets.push(Bullet::new_with_stats(spawn, rotated, i, color, &stats));
+                            }
+                        }
+                    }
+
+                    let mut cd = SHOOT_COOLDOWN * stats.shoot_cooldown_mult;
+                    if self.players[i].overclock_timer > 0.0 { cd *= 0.5; }
+                    self.players[i].shoot_cooldown = cd;
+                    if self.players[i].bullets_remaining <= 0 {
+                        self.players[i].bullets_remaining = 0;
+                        self.players[i].reload_timer = RELOAD_TIME * self.players[i].stats.reload_time_mult;
+                    }
                 }
             }
 
@@ -463,30 +643,44 @@ impl World {
                     let (cd, effect) = cards::activate_ability(card_id, &mut self.players[i]);
                     self.players[i].cards[j].1 = cd;
                     match effect {
-                        cards::AbilityEffect::Swap => {
-                            let my_pos = self.players[i].position;
-                            let mut nearest = None;
-                            let mut nearest_dist = f32::MAX;
+                        cards::AbilityEffect::Screech => {
+                            let my_pos = self.players[i].render_center();
                             for k in 0..self.players.len() {
                                 if k == i || !self.players[k].alive { continue; }
-                                let dx = self.players[k].position.x - my_pos.x;
-                                let dy = self.players[k].position.y - my_pos.y;
+                                let other_pos = self.players[k].render_center();
+                                let dx = other_pos.x - my_pos.x;
+                                let dy = other_pos.y - my_pos.y;
                                 let dist = (dx * dx + dy * dy).sqrt();
-                                if dist < nearest_dist {
-                                    nearest_dist = dist;
-                                    nearest = Some(k);
-                                }
-                            }
-                            if let Some(k) = nearest {
-                                let tmp_pos = self.players[i].position;
-                                let tmp_vel = self.players[i].velocity;
-                                self.players[i].position = self.players[k].position;
-                                self.players[i].velocity = self.players[k].velocity;
-                                self.players[k].position = tmp_pos;
-                                self.players[k].velocity = tmp_vel;
+                                let nx = dx / dist.max(0.01);
+                                let ny = dy / dist.max(0.01);
+                                self.players[k].velocity.x += nx * 30.0;
+                                self.players[k].velocity.y += ny * 30.0;
                             }
                         }
-                        cards::AbilityEffect::None => {}
+                        cards::AbilityEffect::GravityWell => {
+                            let aim = self.players[i].aim_dir;
+                            let spawn = Vector3::new(
+                                self.players[i].position.x + aim.x * 5.0,
+                                self.players[i].position.y + 1.0 + aim.y * 5.0,
+                                self.players[i].position.z,
+                            );
+                            self.gravity_wells.push(GravityWellEntity {
+                                position: spawn,
+                                owner: i,
+                                lifetime: GRAVITY_WELL_LIFETIME,
+                            });
+                        }
+                        cards::AbilityEffect::Decoy => {
+                            let aim = self.players[i].aim_dir;
+                            self.clones.push(CloneEntity {
+                                position: self.players[i].render_center(),
+                                velocity: Vector3::new(aim.x * CLONE_SPEED, aim.y * CLONE_SPEED, 0.0),
+                                owner: i,
+                                lifetime: CLONE_LIFETIME,
+                                color: self.players[i].color,
+                            });
+                        }
+                        cards::AbilityEffect::Ghost | cards::AbilityEffect::None => {}
                     }
                 }
             }
@@ -497,9 +691,218 @@ impl World {
             player.hit_flash_timer = (player.hit_flash_timer - dt).max(0.0);
         }
 
+        // Tick poison (10 DPS)
+        for player in self.players.iter_mut() {
+            if player.alive && player.poison_timer > 0.0 {
+                player.poison_timer = (player.poison_timer - dt).max(0.0);
+                player.hp = (player.hp - 10.0 * dt).max(0.0);
+            }
+        }
+
+        // HP regen
+        for player in self.players.iter_mut() {
+            if player.alive && player.stats.hp_regen > 0.0 {
+                player.hp = (player.hp + player.stats.hp_regen * dt).min(player.max_hp);
+            }
+        }
+
+        // Tick ghost timer
+        for player in self.players.iter_mut() {
+            if player.ghost_timer > 0.0 {
+                player.ghost_timer = (player.ghost_timer - dt).max(0.0);
+            }
+        }
+
+        // Tick overclock: boost → crash transition
+        for player in self.players.iter_mut() {
+            if player.overclock_timer > 0.0 {
+                player.overclock_timer = (player.overclock_timer - dt).max(0.0);
+                if player.overclock_timer <= 0.0 {
+                    player.overclock_crash_timer = 1.5;
+                }
+            }
+            if player.overclock_crash_timer > 0.0 {
+                player.overclock_crash_timer = (player.overclock_crash_timer - dt).max(0.0);
+            }
+        }
+
+        // Tick adrenaline
+        for player in self.players.iter_mut() {
+            if player.adrenaline_timer > 0.0 {
+                player.adrenaline_timer = (player.adrenaline_timer - dt).max(0.0);
+            }
+        }
+
+        // Rewind history sampling (every 0.1s, max 30 entries = 3s)
+        for player in self.players.iter_mut() {
+            if !player.alive { continue; }
+            let has_rewind = player.cards.iter().any(|(c, _)| *c == cards::CardId::Rewind);
+            if has_rewind {
+                player.rewind_sample_timer += dt;
+                if player.rewind_sample_timer >= 0.1 {
+                    player.rewind_sample_timer = 0.0;
+                    player.rewind_history.push((player.position.x, player.position.y, player.hp));
+                    if player.rewind_history.len() > 30 {
+                        player.rewind_history.remove(0);
+                    }
+                }
+            }
+        }
+
+        // Leech field: drain nearby enemies, heal self
+        let positions: Vec<(f32, f32, bool, bool)> = self.players.iter()
+            .map(|p| (p.position.x, p.position.y + p.size.y / 2.0, p.alive, p.stats.leech_field))
+            .collect();
+        for i in 0..self.players.len() {
+            if !positions[i].2 || !positions[i].3 { continue; }
+            let mut heal_total = 0.0_f32;
+            for j in 0..self.players.len() {
+                if j == i || !positions[j].2 { continue; }
+                let dx = positions[j].0 - positions[i].0;
+                let dy = positions[j].1 - positions[i].1;
+                let dist = (dx * dx + dy * dy).sqrt();
+                if dist < LEECH_FIELD_RADIUS {
+                    let drain = LEECH_FIELD_DPS * dt;
+                    self.players[j].hp = (self.players[j].hp - drain).max(0.0);
+                    heal_total += drain;
+                }
+            }
+            if heal_total > 0.0 {
+                self.players[i].hp = (self.players[i].hp + heal_total).min(self.players[i].max_hp);
+            }
+        }
+
         // Update bullets
-        let bullet_events = update_bullets(&mut self.bullets, &mut self.players, &self.level.platforms, dt);
+        let (bullet_events, sticky_datas) = update_bullets(&mut self.bullets, &mut self.players, &self.level.platforms, dt);
         events.extend(bullet_events);
+
+        // Convert sticky bomb data to entities
+        for sd in sticky_datas {
+            self.sticky_bombs.push(StickyBomb {
+                position: sd.position,
+                owner: sd.owner,
+                damage: sd.damage,
+                fuse: STICKY_FUSE,
+                stuck_to: sd.stuck_to,
+                color: sd.color,
+            });
+        }
+
+        // Tick gravity wells: pull enemies + bullets toward center
+        for well in self.gravity_wells.iter_mut() {
+            well.lifetime -= dt;
+            for player in self.players.iter_mut() {
+                if !player.alive || player.ghost_timer > 0.0 { continue; }
+                let dx = well.position.x - player.position.x;
+                let dy = well.position.y - (player.position.y + player.size.y / 2.0);
+                let dist = (dx * dx + dy * dy).sqrt();
+                if dist < GRAVITY_WELL_RADIUS && dist > 0.5 {
+                    let force = GRAVITY_WELL_FORCE * (1.0 - dist / GRAVITY_WELL_RADIUS);
+                    player.velocity.x += (dx / dist) * force * dt;
+                    player.velocity.y += (dy / dist) * force * dt;
+                }
+            }
+            for bullet in self.bullets.iter_mut() {
+                let dx = well.position.x - bullet.position.x;
+                let dy = well.position.y - bullet.position.y;
+                let dist = (dx * dx + dy * dy).sqrt();
+                if dist < GRAVITY_WELL_RADIUS && dist > 0.3 {
+                    let force = GRAVITY_WELL_FORCE * 2.0 * (1.0 - dist / GRAVITY_WELL_RADIUS);
+                    bullet.velocity.x += (dx / dist) * force * dt;
+                    bullet.velocity.y += (dy / dist) * force * dt;
+                }
+            }
+        }
+        self.gravity_wells.retain(|w| w.lifetime > 0.0);
+
+        // Tick clones: chase nearest enemy, explode on contact
+        for clone in self.clones.iter_mut() {
+            clone.lifetime -= dt;
+            // Find nearest enemy to chase
+            let mut closest_dist = f32::MAX;
+            let mut chase_dir = (0.0_f32, 0.0_f32);
+            for (pi, player) in self.players.iter().enumerate() {
+                if pi == clone.owner || !player.alive || player.ghost_timer > 0.0 { continue; }
+                let dx = player.position.x - clone.position.x;
+                let dy = (player.position.y + player.size.y / 2.0) - clone.position.y;
+                let dist = (dx * dx + dy * dy).sqrt();
+                if dist < closest_dist {
+                    closest_dist = dist;
+                    let d = dist.max(0.01);
+                    chase_dir = (dx / d, dy / d);
+                }
+            }
+            // Steer toward target
+            let spd = CLONE_SPEED;
+            clone.velocity.x = clone.velocity.x * 0.9 + chase_dir.0 * spd * 0.1;
+            clone.velocity.y = clone.velocity.y * 0.9 + chase_dir.1 * spd * 0.1;
+            let vel_len = (clone.velocity.x * clone.velocity.x + clone.velocity.y * clone.velocity.y + clone.velocity.z * clone.velocity.z).sqrt();
+            if vel_len > spd {
+                clone.velocity.x = clone.velocity.x / vel_len * spd;
+                clone.velocity.y = clone.velocity.y / vel_len * spd;
+            }
+            clone.position.x += clone.velocity.x * dt;
+            clone.position.y += clone.velocity.y * dt;
+
+            // Explode on contact with enemy
+            if closest_dist < CLONE_EXPLODE_RADIUS {
+                for player in self.players.iter_mut() {
+                    if !player.alive { continue; }
+                    let dx = player.position.x - clone.position.x;
+                    let dy = (player.position.y + player.size.y / 2.0) - clone.position.y;
+                    let dist = (dx * dx + dy * dy).sqrt();
+                    if dist < CLONE_EXPLODE_RADIUS {
+                        let falloff = 1.0 - (dist / CLONE_EXPLODE_RADIUS);
+                        player.hp = (player.hp - CLONE_DAMAGE * falloff).max(0.0);
+                        player.hit_flash_timer = HIT_FLASH_DURATION;
+                    }
+                }
+                events.push(GameEvent::Explosion {
+                    x: clone.position.x, y: clone.position.y, z: clone.position.z,
+                    r: clone.color.r, g: clone.color.g, b: clone.color.b,
+                });
+                clone.lifetime = 0.0;
+            }
+        }
+        self.clones.retain(|c| c.lifetime > 0.0);
+
+        // Tick sticky bombs: count down fuse, track stuck player, explode
+        for bomb in self.sticky_bombs.iter_mut() {
+            // Track stuck player position
+            if let Some(pi) = bomb.stuck_to {
+                if pi < self.players.len() && self.players[pi].alive {
+                    bomb.position = self.players[pi].render_center();
+                }
+            }
+            bomb.fuse -= dt;
+        }
+        // Explode expired sticky bombs
+        let mut bomb_explosions: Vec<(Vector3, usize, f32, Color)> = Vec::new();
+        self.sticky_bombs.retain(|b| {
+            if b.fuse <= 0.0 {
+                bomb_explosions.push((b.position, b.owner, b.damage, b.color));
+                false
+            } else {
+                true
+            }
+        });
+        for (pos, _owner, damage, color) in &bomb_explosions {
+            for player in self.players.iter_mut() {
+                if !player.alive { continue; }
+                let dx = player.position.x - pos.x;
+                let dy = (player.position.y + player.size.y / 2.0) - pos.y;
+                let dist = (dx * dx + dy * dy).sqrt();
+                if dist < STICKY_EXPLODE_RADIUS {
+                    let falloff = 1.0 - (dist / STICKY_EXPLODE_RADIUS);
+                    player.hp = (player.hp - damage * falloff).max(0.0);
+                    player.hit_flash_timer = HIT_FLASH_DURATION;
+                }
+            }
+            events.push(GameEvent::Explosion {
+                x: pos.x, y: pos.y, z: pos.z,
+                r: color.r, g: color.g, b: color.b,
+            });
+        }
 
         // Check for deaths
         for i in 0..self.players.len() {
@@ -558,6 +961,13 @@ impl World {
                 cursor_x: cx,
                 cursor_y: cy,
                 cards: p.cards.iter().map(|(c, cd)| (*c as u8, *cd)).collect(),
+                laser_active: p.laser_active,
+                poison_timer: p.poison_timer,
+                ghost_timer: p.ghost_timer,
+                overclock_timer: p.overclock_timer,
+                overclock_crash_timer: p.overclock_crash_timer,
+                adrenaline_timer: p.adrenaline_timer,
+                upsized_stacks: p.upsized_stacks,
             }
         }).collect();
 
@@ -610,6 +1020,20 @@ impl World {
             card_hover,
             match_winner,
             match_timer,
+            gravity_wells: self.gravity_wells.iter().map(|w| GravityWellSnapshot {
+                x: w.position.x, y: w.position.y,
+                owner: w.owner as u8, lifetime: w.lifetime,
+            }).collect(),
+            clones: self.clones.iter().map(|c| CloneSnapshot {
+                x: c.position.x, y: c.position.y,
+                vel_x: c.velocity.x, vel_y: c.velocity.y,
+                owner: c.owner as u8, lifetime: c.lifetime,
+            }).collect(),
+            sticky_bombs: self.sticky_bombs.iter().map(|s| StickyBombSnapshot {
+                x: s.position.x, y: s.position.y,
+                owner: s.owner as u8, fuse: s.fuse,
+                stuck_to: s.stuck_to.map(|i| i as u8).unwrap_or(0xFF),
+            }).collect(),
         }
     }
 
@@ -651,6 +1075,18 @@ impl World {
             }
             p.stats = cards::compute_stats(&p.cards);
             p.max_hp = (100.0 + p.stats.max_hp_bonus) * p.stats.max_hp_mult;
+            p.laser_active = ps.laser_active;
+            p.poison_timer = ps.poison_timer;
+            p.ghost_timer = ps.ghost_timer;
+            p.overclock_timer = ps.overclock_timer;
+            p.overclock_crash_timer = ps.overclock_crash_timer;
+            p.adrenaline_timer = ps.adrenaline_timer;
+            p.upsized_stacks = ps.upsized_stacks;
+            // Apply upsized size on client
+            let upsized_mult = 1.0 + 0.05 * p.upsized_stacks as f32;
+            p.size.x = 0.6 * p.stats.size_mult * upsized_mult;
+            p.size.y = 1.6 * p.stats.size_mult * upsized_mult;
+            p.size.z = 0.6 * p.stats.size_mult * upsized_mult;
         }
 
         for (i, &s) in snap.scores.iter().enumerate() {
@@ -680,6 +1116,53 @@ impl World {
                 homing: false,
                 piercing: false,
                 explosive: false,
+                poison: false,
+                gravity_mult: 1.0,
+                phantom: false,
+                split_on_hit: false,
+                hot_potato: false,
+                sticky: false,
+            });
+        }
+
+        // Reconstruct entities from snapshot
+        self.gravity_wells.clear();
+        for w in &snap.gravity_wells {
+            self.gravity_wells.push(GravityWellEntity {
+                position: Vector3::new(w.x, w.y, 0.0),
+                owner: w.owner as usize,
+                lifetime: w.lifetime,
+            });
+        }
+        self.clones.clear();
+        for c in &snap.clones {
+            let color = if (c.owner as usize) < self.players.len() {
+                self.players[c.owner as usize].color
+            } else {
+                Color::WHITE
+            };
+            self.clones.push(CloneEntity {
+                position: Vector3::new(c.x, c.y, 0.0),
+                velocity: Vector3::new(c.vel_x, c.vel_y, 0.0),
+                owner: c.owner as usize,
+                lifetime: c.lifetime,
+                color,
+            });
+        }
+        self.sticky_bombs.clear();
+        for s in &snap.sticky_bombs {
+            let color = if (s.owner as usize) < self.players.len() {
+                self.players[s.owner as usize].color
+            } else {
+                Color::WHITE
+            };
+            self.sticky_bombs.push(StickyBomb {
+                position: Vector3::new(s.x, s.y, 0.0),
+                owner: s.owner as usize,
+                damage: 0.0,
+                fuse: s.fuse,
+                stuck_to: if s.stuck_to == 0xFF { None } else { Some(s.stuck_to as usize) },
+                color,
             });
         }
 

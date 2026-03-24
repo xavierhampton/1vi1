@@ -11,6 +11,7 @@ pub enum GameEvent {
     PlayerDied { x: f32, y: f32, z: f32, r: u8, g: u8, b: u8 },
     TerrainHit { x: f32, y: f32, z: f32, r: u8, g: u8, b: u8 },
     BulletFired { x: f32, y: f32, z: f32, vx: f32, vy: f32, owner: u8, r: u8, g: u8, b: u8 },
+    Explosion { x: f32, y: f32, z: f32, r: u8, g: u8, b: u8 },
 }
 
 // ── Snapshot types ───────────────────────────────────────────────────────────
@@ -32,6 +33,13 @@ pub struct PlayerSnapshot {
     pub cursor_x: f32,
     pub cursor_y: f32,
     pub cards: Vec<(u8, f32)>,
+    pub laser_active: bool,
+    pub poison_timer: f32,
+    pub ghost_timer: f32,
+    pub overclock_timer: f32,
+    pub overclock_crash_timer: f32,
+    pub adrenaline_timer: f32,
+    pub upsized_stacks: i32,
 }
 
 #[derive(Debug, Clone)]
@@ -47,6 +55,33 @@ pub struct BulletSnapshot {
     pub owner: u8,
     pub lifetime: f32,
     pub radius: f32,
+}
+
+#[derive(Debug, Clone)]
+pub struct GravityWellSnapshot {
+    pub x: f32,
+    pub y: f32,
+    pub owner: u8,
+    pub lifetime: f32,
+}
+
+#[derive(Debug, Clone)]
+pub struct CloneSnapshot {
+    pub x: f32,
+    pub y: f32,
+    pub vel_x: f32,
+    pub vel_y: f32,
+    pub owner: u8,
+    pub lifetime: f32,
+}
+
+#[derive(Debug, Clone)]
+pub struct StickyBombSnapshot {
+    pub x: f32,
+    pub y: f32,
+    pub owner: u8,
+    pub fuse: f32,
+    pub stuck_to: u8,
 }
 
 #[derive(Debug, Clone)]
@@ -72,6 +107,10 @@ pub struct WorldSnapshot {
     // MatchOver fields
     pub match_winner: u8,
     pub match_timer: f32,
+    // Entity snapshots
+    pub gravity_wells: Vec<GravityWellSnapshot>,
+    pub clones: Vec<CloneSnapshot>,
+    pub sticky_bombs: Vec<StickyBombSnapshot>,
 }
 
 // ── Encode/decode GameInput ──────────────────────────────────────────────────
@@ -83,7 +122,8 @@ pub fn encode_game_input(input: &PlayerInput) -> Vec<u8> {
     let flags: u8 = (input.jump_pressed as u8)
         | ((input.jump_held as u8) << 1)
         | ((input.shoot_pressed as u8) << 2)
-        | ((input.ability_pressed as u8) << 3);
+        | ((input.ability_pressed as u8) << 3)
+        | ((input.shoot_held as u8) << 4);
     payload.push(flags);
     payload.extend_from_slice(&input.aim_dir.x.to_le_bytes());
     payload.extend_from_slice(&input.aim_dir.y.to_le_bytes());
@@ -119,6 +159,7 @@ pub fn decode_game_input(data: &[u8]) -> Option<PlayerInput> {
         jump_pressed: flags & 1 != 0,
         jump_held: flags & 2 != 0,
         shoot_pressed: flags & 4 != 0,
+        shoot_held: flags & 16 != 0,
         ability_pressed: flags & 8 != 0,
         aim_dir: Vector2::new(aim_x, aim_y),
         cursor_x,
@@ -186,6 +227,13 @@ pub fn encode_snapshot(snap: &WorldSnapshot) -> Vec<u8> {
             payload.push(*card_id);
             push_f32(&mut payload, *cooldown);
         }
+        payload.push(p.laser_active as u8);
+        push_f32(&mut payload, p.poison_timer);
+        push_f32(&mut payload, p.ghost_timer);
+        push_f32(&mut payload, p.overclock_timer);
+        push_f32(&mut payload, p.overclock_crash_timer);
+        push_f32(&mut payload, p.adrenaline_timer);
+        push_i32(&mut payload, p.upsized_stacks);
     }
 
     for s in &snap.scores {
@@ -231,6 +279,13 @@ pub fn encode_snapshot(snap: &WorldSnapshot) -> Vec<u8> {
                 push_f32(&mut payload, *z);
                 payload.push(*r); payload.push(*g); payload.push(*b);
             }
+            GameEvent::Explosion { x, y, z, r, g, b } => {
+                payload.push(4);
+                push_f32(&mut payload, *x);
+                push_f32(&mut payload, *y);
+                push_f32(&mut payload, *z);
+                payload.push(*r); payload.push(*g); payload.push(*b);
+            }
             GameEvent::BulletFired { x, y, z, vx, vy, owner, r, g, b } => {
                 payload.push(3);
                 push_f32(&mut payload, *x);
@@ -258,6 +313,32 @@ pub fn encode_snapshot(snap: &WorldSnapshot) -> Vec<u8> {
     // MatchOver fields
     payload.push(snap.match_winner);
     push_f32(&mut payload, snap.match_timer);
+
+    // Entity snapshots
+    payload.push(snap.gravity_wells.len() as u8);
+    for w in &snap.gravity_wells {
+        push_f32(&mut payload, w.x);
+        push_f32(&mut payload, w.y);
+        payload.push(w.owner);
+        push_f32(&mut payload, w.lifetime);
+    }
+    payload.push(snap.clones.len() as u8);
+    for c in &snap.clones {
+        push_f32(&mut payload, c.x);
+        push_f32(&mut payload, c.y);
+        push_f32(&mut payload, c.vel_x);
+        push_f32(&mut payload, c.vel_y);
+        payload.push(c.owner);
+        push_f32(&mut payload, c.lifetime);
+    }
+    payload.push(snap.sticky_bombs.len() as u8);
+    for s in &snap.sticky_bombs {
+        push_f32(&mut payload, s.x);
+        push_f32(&mut payload, s.y);
+        payload.push(s.owner);
+        push_f32(&mut payload, s.fuse);
+        payload.push(s.stuck_to);
+    }
 
     let len = payload.len() as u16;
     let mut out = Vec::with_capacity(2 + payload.len());
@@ -304,6 +385,13 @@ pub fn decode_snapshot(data: &[u8]) -> Option<WorldSnapshot> {
             let cooldown = read_f32(data, &mut pos);
             cards.push((card_id, cooldown));
         }
+        let ps_laser = if pos < data.len() { read_u8(data, &mut pos) != 0 } else { false };
+        let ps_poison = if pos + 4 <= data.len() { read_f32(data, &mut pos) } else { 0.0 };
+        let ps_ghost = if pos + 4 <= data.len() { read_f32(data, &mut pos) } else { 0.0 };
+        let ps_overclock = if pos + 4 <= data.len() { read_f32(data, &mut pos) } else { 0.0 };
+        let ps_overclock_crash = if pos + 4 <= data.len() { read_f32(data, &mut pos) } else { 0.0 };
+        let ps_adrenaline = if pos + 4 <= data.len() { read_f32(data, &mut pos) } else { 0.0 };
+        let ps_upsized = if pos + 4 <= data.len() { read_i32(data, &mut pos) } else { 0 };
         players.push(PlayerSnapshot {
             pos_x: ps_pos_x, pos_y: ps_pos_y,
             vel_x: ps_vel_x, vel_y: ps_vel_y,
@@ -313,6 +401,13 @@ pub fn decode_snapshot(data: &[u8]) -> Option<WorldSnapshot> {
             bullets_remaining: ps_bullets_remaining, alive: ps_alive,
             cursor_x: ps_cursor_x, cursor_y: ps_cursor_y,
             cards,
+            laser_active: ps_laser,
+            poison_timer: ps_poison,
+            ghost_timer: ps_ghost,
+            overclock_timer: ps_overclock,
+            overclock_crash_timer: ps_overclock_crash,
+            adrenaline_timer: ps_adrenaline,
+            upsized_stacks: ps_upsized,
         });
     }
 
@@ -349,7 +444,7 @@ pub fn decode_snapshot(data: &[u8]) -> Option<WorldSnapshot> {
         if pos >= data.len() { return None; }
         let etype = read_u8(data, &mut pos);
         match etype {
-            0 | 1 | 2 => {
+            0 | 1 | 2 | 4 => {
                 if pos + 15 > data.len() { return None; }
                 let x = read_f32(data, &mut pos);
                 let y = read_f32(data, &mut pos);
@@ -360,6 +455,7 @@ pub fn decode_snapshot(data: &[u8]) -> Option<WorldSnapshot> {
                 events.push(match etype {
                     0 => GameEvent::PlayerHit { x, y, z, r, g, b },
                     1 => GameEvent::PlayerDied { x, y, z, r, g, b },
+                    4 => GameEvent::Explosion { x, y, z, r, g, b },
                     _ => GameEvent::TerrainHit { x, y, z, r, g, b },
                 });
             }
@@ -406,6 +502,50 @@ pub fn decode_snapshot(data: &[u8]) -> Option<WorldSnapshot> {
         (0, 0.0)
     };
 
+    // Entity snapshots
+    let mut gravity_wells = Vec::new();
+    if pos < data.len() {
+        let count = read_u8(data, &mut pos);
+        for _ in 0..count {
+            if pos + 13 > data.len() { break; }
+            gravity_wells.push(GravityWellSnapshot {
+                x: read_f32(data, &mut pos),
+                y: read_f32(data, &mut pos),
+                owner: read_u8(data, &mut pos),
+                lifetime: read_f32(data, &mut pos),
+            });
+        }
+    }
+    let mut clones = Vec::new();
+    if pos < data.len() {
+        let count = read_u8(data, &mut pos);
+        for _ in 0..count {
+            if pos + 21 > data.len() { break; }
+            clones.push(CloneSnapshot {
+                x: read_f32(data, &mut pos),
+                y: read_f32(data, &mut pos),
+                vel_x: read_f32(data, &mut pos),
+                vel_y: read_f32(data, &mut pos),
+                owner: read_u8(data, &mut pos),
+                lifetime: read_f32(data, &mut pos),
+            });
+        }
+    }
+    let mut sticky_bombs = Vec::new();
+    if pos < data.len() {
+        let count = read_u8(data, &mut pos);
+        for _ in 0..count {
+            if pos + 14 > data.len() { break; }
+            sticky_bombs.push(StickyBombSnapshot {
+                x: read_f32(data, &mut pos),
+                y: read_f32(data, &mut pos),
+                owner: read_u8(data, &mut pos),
+                fuse: read_f32(data, &mut pos),
+                stuck_to: read_u8(data, &mut pos),
+            });
+        }
+    }
+
     Some(WorldSnapshot {
         state_tag,
         state_timer,
@@ -426,6 +566,9 @@ pub fn decode_snapshot(data: &[u8]) -> Option<WorldSnapshot> {
         card_hover,
         match_winner,
         match_timer,
+        gravity_wells,
+        clones,
+        sticky_bombs,
     })
 }
 

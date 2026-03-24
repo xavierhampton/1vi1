@@ -25,7 +25,17 @@ pub struct Player {
     pub alive: bool,
     pub cards: Vec<(CardId, f32)>, // (card, cooldown) — abilities use cooldown, powerups store 0.0
     pub stats: PlayerStats,        // computed from held powerup cards
-    pub stomp_active: bool,        // true while slamming down (Stomp ability)
+    pub stomp_active: bool,
+    pub laser_active: bool,
+    pub poison_timer: f32,
+    pub ghost_timer: f32,
+    pub overclock_timer: f32,
+    pub overclock_crash_timer: f32,
+    pub adrenaline_timer: f32,
+    pub upsized_stacks: i32,
+    pub rewind_history: Vec<(f32, f32, f32)>, // (x, y, hp) snapshots for Rewind
+    pub rewind_sample_timer: f32,
+    pub wall_dir: i8, // -1 = wall left, 0 = none, 1 = wall right
 }
 
 impl Player {
@@ -51,6 +61,16 @@ impl Player {
             cards: Vec::new(),
             stats: PlayerStats::default(),
             stomp_active: false,
+            laser_active: false,
+            poison_timer: 0.0,
+            ghost_timer: 0.0,
+            overclock_timer: 0.0,
+            overclock_crash_timer: 0.0,
+            adrenaline_timer: 0.0,
+            upsized_stacks: 0,
+            rewind_history: Vec::new(),
+            rewind_sample_timer: 0.0,
+            wall_dir: 0,
         }
     }
 

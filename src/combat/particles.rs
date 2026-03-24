@@ -105,8 +105,28 @@ pub fn spawn_from_events(
             GameEvent::TerrainHit { x, y, z, r, g, b } => {
                 spawn_terrain_hit(particles, rng, Vector3::new(*x, *y, *z), Color::new(*r, *g, *b, 255));
             }
+            GameEvent::Explosion { x, y, z, r, g, b } => {
+                spawn_explosion(particles, rng, Vector3::new(*x, *y, *z), Color::new(*r, *g, *b, 255));
+            }
             GameEvent::BulletFired { .. } => {}
         }
+    }
+}
+
+pub fn spawn_explosion(particles: &mut Vec<Particle>, rng: &mut Rng, pos: Vector3, color: Color) {
+    for _ in 0..12 {
+        let angle = rng.range(0.0, std::f32::consts::TAU);
+        let speed = rng.range(3.0, 8.0);
+        let lifetime = rng.range(0.3, 0.6);
+        particles.push(Particle {
+            position: pos,
+            vel_x: angle.cos() * speed,
+            vel_y: angle.sin() * speed + 2.0,
+            lifetime,
+            max_lifetime: lifetime,
+            color,
+            size: rng.range(0.04, 0.10),
+        });
     }
 }
 

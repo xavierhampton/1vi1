@@ -15,15 +15,23 @@ const JUMP_VELOCITY: f32 = 11.6;
 const JUMP_CUT_MULTIPLIER: f32 = 0.5;
 const COYOTE_TIME: f32 = 0.08;
 const MAX_AIR_JUMPS: i32 = 1;
+const WALL_JUMP_H: f32 = 10.0;
+const WALL_SLIDE_FALL: f32 = 4.0;
 
 pub fn update(player: &mut Player, input: &PlayerInput, platforms: &[Platform], dt: f32) {
+    update_with_speed(player, input, platforms, dt, 1.0);
+}
+
+pub fn update_with_speed(player: &mut Player, input: &PlayerInput, platforms: &[Platform], dt: f32, speed_mult: f32) {
     let prev_grounded = player.grounded;
+    let prev_wall = player.wall_dir;
     player.grounded = false;
+    player.wall_dir = 0;
     let mut jumped = false;
 
     // Effective stats from powerups
-    let eff_move_speed = MOVE_SPEED;
-    let eff_bhop_speed = MAX_BHOP_SPEED;
+    let eff_move_speed = MOVE_SPEED * speed_mult * player.stats.move_speed_mult;
+    let eff_bhop_speed = MAX_BHOP_SPEED * speed_mult * player.stats.move_speed_mult;
     let eff_max_air_jumps = MAX_AIR_JUMPS + player.stats.extra_air_jumps;
 
     // Bhop: if holding jump on landing, skip ground friction entirely
@@ -84,6 +92,13 @@ pub fn update(player: &mut Player, input: &PlayerInput, platforms: &[Platform], 
         player.air_jumps += 1;
         jumped = true;
         player.jump_cut_applied = false;
+    } else if !jumped && !prev_grounded && prev_wall != 0 && input.jump_pressed {
+        // Wall jump: kick off wall
+        player.velocity.x = -(prev_wall as f32) * WALL_JUMP_H;
+        player.velocity.y = JUMP_VELOCITY;
+        jumped = true;
+        player.jump_cut_applied = false;
+        player.air_jumps = 0;
     }
 
     // Variable jump height: one-time cut when jump key released
@@ -98,6 +113,11 @@ pub fn update(player: &mut Player, input: &PlayerInput, platforms: &[Platform], 
 
     // Resolve collisions using minimum penetration
     resolve_collisions(player, platforms);
+
+    // Wall slide: slow fall when hugging a wall
+    if player.wall_dir != 0 && !player.grounded && player.velocity.y < -WALL_SLIDE_FALL {
+        player.velocity.y = -WALL_SLIDE_FALL;
+    }
 
     // Reset when grounded
     if player.grounded {
@@ -137,8 +157,10 @@ fn resolve_collisions(player: &mut Player, platforms: &[Platform]) {
                 // Resolve horizontal
                 if pen_left < pen_right {
                     player.position.x -= pen_left;
+                    player.wall_dir = 1; // wall to the right
                 } else {
                     player.position.x += pen_right;
+                    player.wall_dir = -1; // wall to the left
                 }
                 player.velocity.x = 0.0;
             } else {
