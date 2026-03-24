@@ -43,10 +43,11 @@ pub fn draw_hud(
         // Bullet pips
         let pip_size = 7;
         let pip_gap = 4;
-        let total_pip_w = MAX_BULLETS * (pip_size + pip_gap) - pip_gap;
+        let max_ammo = MAX_BULLETS + player.stats.extra_ammo;
+        let total_pip_w = max_ammo * (pip_size + pip_gap) - pip_gap;
         let pip_x = sx - total_pip_w / 2;
         let pip_y = bar_y + bar_h + 5;
-        for i in 0..MAX_BULLETS {
+        for i in 0..max_ammo {
             let px = pip_x + i * (pip_size + pip_gap);
             let pip_color = if i < player.bullets_remaining {
                 player.color
@@ -58,7 +59,7 @@ pub fn draw_hud(
 
         // Reload bar
         if player.reload_timer > 0.0 {
-            let eff_reload = RELOAD_TIME * player.stats.reload_time_mult;
+            let eff_reload = RELOAD_TIME;
             let reload_ratio = 1.0 - (player.reload_timer / eff_reload);
             let reload_fill = (total_pip_w as f32 * reload_ratio) as i32;
             d.draw_rectangle(pip_x, pip_y, total_pip_w, pip_size, Color::new(40, 40, 40, 200));

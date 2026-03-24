@@ -17,6 +17,7 @@ pub enum ServerEvent {
 pub struct LobbyServer {
     pub state: LobbyState,
     pub my_addr: String,
+    pub dev_mode: bool,
     pub(crate) client_streams: Vec<Option<TcpStream>>,
     pub(crate) event_rx: Option<Receiver<ServerEvent>>,
     pub(crate) shutdown: Arc<AtomicBool>,
@@ -62,6 +63,7 @@ impl LobbyServer {
         Ok(Self {
             state: LobbyState::new_host(host_name),
             my_addr: local_addr,
+            dev_mode: false,
             client_streams: Vec::new(),
             event_rx: Some(event_rx),
             shutdown,
@@ -152,8 +154,10 @@ impl LobbyServer {
             self.broadcast_snapshot();
         }
 
-        // Check if all ready
-        if self.state.all_ready() {
+        // Check if all ready (dev mode allows solo start)
+        let can_start = self.state.all_ready()
+            || (self.dev_mode && self.state.slots[0].ready);
+        if can_start {
             self.broadcast_game_start();
             return true;
         }

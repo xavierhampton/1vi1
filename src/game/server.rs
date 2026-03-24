@@ -18,6 +18,7 @@ const BROADCAST_RATE: f32 = 1.0 / 60.0;
 
 pub struct GameServer {
     pub world: World,
+    pub dev_mode: bool,
     client_streams: Vec<Option<TcpStream>>,
     event_rx: Receiver<ServerEvent>,
     shutdown: Arc<AtomicBool>,
@@ -47,6 +48,7 @@ impl GameServer {
 
         Self {
             world,
+            dev_mode: false,
             client_streams: parts.client_streams,
             event_rx: parts.event_rx,
             shutdown: parts.shutdown,
@@ -65,6 +67,24 @@ impl GameServer {
                 self.world.players[0].position.y + self.world.players[0].size.y / 2.0,
             );
             self.inputs[0] = input::read_input(rl, camera, center);
+        }
+
+        // 1b. Dev mode: arrow keys control dummy (player 1)
+        if self.dev_mode && self.inputs.len() > 1 {
+            let mut move_dir = 0.0;
+            if rl.is_key_down(KeyboardKey::KEY_LEFT) { move_dir -= 1.0; }
+            if rl.is_key_down(KeyboardKey::KEY_RIGHT) { move_dir += 1.0; }
+            self.inputs[1].move_dir = move_dir;
+            self.inputs[1].jump_pressed |= rl.is_key_pressed(KeyboardKey::KEY_UP);
+            self.inputs[1].jump_held = rl.is_key_down(KeyboardKey::KEY_UP);
+            // Dummy aims toward player 0
+            let dx = self.world.players[0].position.x - self.world.players[1].position.x;
+            let dy = (self.world.players[0].position.y + self.world.players[0].size.y / 2.0)
+                   - (self.world.players[1].position.y + self.world.players[1].size.y / 2.0);
+            let len = (dx * dx + dy * dy).sqrt();
+            if len > 0.01 {
+                self.inputs[1].aim_dir = Vector2::new(dx / len, dy / len);
+            }
         }
 
         // 2. Drain client inputs (OR-accumulate one-shot fields)
@@ -127,6 +147,16 @@ impl GameServer {
                     }
                 } else {
                     self.inputs[0].hover_card = 0xFF;
+                }
+            }
+        }
+
+        // Dev mode: auto-skip card pick for dummy players (no TCP client)
+        if self.dev_mode {
+            if let GameState::CardPick { current_picker, chosen_card, phase_timer, .. } = &self.world.state {
+                if *current_picker != 0 && chosen_card.is_none() && *phase_timer <= 0.0 {
+                    // Skip dummy's turn — just pick card 0 instantly
+                    self.world.process_card_choice(*current_picker, 0);
                 }
             }
         }

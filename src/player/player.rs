@@ -25,6 +25,7 @@ pub struct Player {
     pub alive: bool,
     pub cards: Vec<(CardId, f32)>, // (card, cooldown) — abilities use cooldown, powerups store 0.0
     pub stats: PlayerStats,        // computed from held powerup cards
+    pub stomp_active: bool,        // true while slamming down (Stomp ability)
 }
 
 impl Player {
@@ -49,6 +50,7 @@ impl Player {
             alive: true,
             cards: Vec::new(),
             stats: PlayerStats::default(),
+            stomp_active: false,
         }
     }
 

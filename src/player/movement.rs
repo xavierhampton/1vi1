@@ -22,9 +22,8 @@ pub fn update(player: &mut Player, input: &PlayerInput, platforms: &[Platform], 
     let mut jumped = false;
 
     // Effective stats from powerups
-    let speed_mult = player.stats.move_speed_mult;
-    let eff_move_speed = MOVE_SPEED * speed_mult;
-    let eff_bhop_speed = MAX_BHOP_SPEED * speed_mult;
+    let eff_move_speed = MOVE_SPEED;
+    let eff_bhop_speed = MAX_BHOP_SPEED;
     let eff_max_air_jumps = MAX_AIR_JUMPS + player.stats.extra_air_jumps;
 
     // Bhop: if holding jump on landing, skip ground friction entirely
@@ -33,8 +32,11 @@ pub fn update(player: &mut Player, input: &PlayerInput, platforms: &[Platform], 
     if prev_grounded && !is_bhop_frame {
         // Ground movement: full accel/decel with speed cap
         if input.move_dir != 0.0 {
+            let vel_before = player.velocity.x;
             player.velocity.x += input.move_dir * MOVE_ACCEL * dt;
-            player.velocity.x = player.velocity.x.clamp(-eff_move_speed, eff_move_speed);
+            // Soft cap: preserve momentum above move speed (e.g. from dash)
+            let cap = eff_move_speed.max(vel_before.abs());
+            player.velocity.x = player.velocity.x.clamp(-cap, cap);
         } else {
             let decel = MOVE_DECEL * dt;
             if player.velocity.x > 0.0 {
@@ -49,8 +51,11 @@ pub fn update(player: &mut Player, input: &PlayerInput, platforms: &[Platform], 
             let against = (input.move_dir > 0.0 && player.velocity.x < 0.0)
                 || (input.move_dir < 0.0 && player.velocity.x > 0.0);
             let accel = if against { AIR_COUNTER_ACCEL } else { AIR_ACCEL };
+            let vel_before = player.velocity.x;
             player.velocity.x += input.move_dir * accel * dt;
-            player.velocity.x = player.velocity.x.clamp(-eff_bhop_speed, eff_bhop_speed);
+            // Soft cap: preserve momentum above bhop speed (e.g. from dash)
+            let cap = eff_bhop_speed.max(vel_before.abs());
+            player.velocity.x = player.velocity.x.clamp(-cap, cap);
         }
     }
 

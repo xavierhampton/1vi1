@@ -13,6 +13,7 @@ use game::world::World;
 use lobby::client::LobbyClient;
 use lobby::screen::{draw_lobby, lobby_input, LobbyInput};
 use lobby::server::LobbyServer;
+use lobby::state::{LobbyColor, PlayerSlot};
 use menu::menu::{Menu, MenuAction};
 use raylib::prelude::*;
 use render::cards::CardPickAnim;
@@ -52,6 +53,7 @@ fn main() {
     let mut game_time: f32 = 0.0;
     let mut lobby_time: f32 = 0.0;
     let mut card_anim = CardPickAnim::new();
+    let mut dev_overlay_open = false;
 
     while !rl.window_should_close() {
         let dt = rl.get_frame_time();
@@ -76,7 +78,8 @@ fn main() {
                     MenuAction::Host => {
                         let name = if menu.player_name.is_empty() { "Player" } else { &menu.player_name };
                         match LobbyServer::start(name, DEFAULT_PORT) {
-                            Ok(server) => {
+                            Ok(mut server) => {
+                                server.dev_mode = menu.dev_mode;
                                 lobby_time = 0.0;
                                 next_state = Some(AppState::Lobby(LobbyRole::Host(server)));
                             }
@@ -147,13 +150,27 @@ fn main() {
 
                         let game_start = server.update();
                         if game_start {
-                            let world = World::from_lobby(&server.state);
+                            // In dev mode solo, add a dummy player to the lobby
+                            let lobby_state = if server.dev_mode && server.state.slots.len() == 1 {
+                                let mut s = server.state.clone();
+                                let dummy_color = s.first_available_color().unwrap_or(LobbyColor::Red);
+                                s.slots.push(PlayerSlot {
+                                    name: "Dummy".to_string(),
+                                    color: dummy_color,
+                                    ready: true,
+                                    is_host: false,
+                                });
+                                s
+                            } else {
+                                server.state.clone()
+                            };
+                            let world = World::from_lobby(&lobby_state);
                             let parts = server.into_game_parts();
                             game_time = 0.0;
                             card_anim = CardPickAnim::new();
-                            next_state = Some(AppState::InGameHost(
-                                GameServer::new(world, parts),
-                            ));
+                            let mut gs = GameServer::new(world, parts);
+                            gs.dev_mode = server.dev_mode;
+                            next_state = Some(AppState::InGameHost(gs));
                         }
 
                         if next_state.is_none() {
@@ -237,16 +254,36 @@ fn main() {
             }
             AppState::InGameHost(game_server) => {
                 if rl.is_key_pressed(KeyboardKey::KEY_ESCAPE) {
-                    next_state = Some(AppState::Menu);
+                    if dev_overlay_open {
+                        dev_overlay_open = false;
+                    } else {
+                        next_state = Some(AppState::Menu);
+                    }
                 } else {
+                    // Dev mode toggle
+                    if menu.dev_mode && rl.is_key_pressed(KeyboardKey::KEY_TAB) {
+                        dev_overlay_open = !dev_overlay_open;
+                    }
+
+                    // Dev mode card click — toggle on/off
+                    if dev_overlay_open && rl.is_mouse_button_pressed(MouseButton::MOUSE_BUTTON_LEFT) {
+                        let mouse = rl.get_mouse_position();
+                        if let Some(card_id) = render::game::dev_overlay_click(mouse, render_w, render_h) {
+                            game_server.world.dev_toggle_card(0, card_id);
+                        }
+                    }
+
                     game_time += dt;
                     let camera = render::camera::game_camera(&game_server.world);
-                    game_server.update(&rl, &camera, dt);
+                    if !dev_overlay_open {
+                        game_server.update(&rl, &camera, dt);
+                    }
                     card_anim.update(&game_server.world, dt);
                     let theme = menu.theme();
                     render::game::draw_world(
                         &mut rl, &thread, &mut crt, &game_server.world, camera,
                         render_w, render_h, theme, game_time, &card_anim, 0,
+                        dev_overlay_open,
                     );
                 }
             }
@@ -262,7 +299,7 @@ fn main() {
                     render::game::draw_world(
                         &mut rl, &thread, &mut crt, &game_client.world, camera,
                         render_w, render_h, theme, game_time, &card_anim,
-                        game_client.my_index,
+                        game_client.my_index, false,
                     );
                 }
             }

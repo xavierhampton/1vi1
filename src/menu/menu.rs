@@ -63,6 +63,11 @@ pub struct Menu {
     error_timer: f32,
 
     pub player_name: String,
+
+    // Dev mode (triple-press 0)
+    pub dev_mode: bool,
+    dev_zero_count: u8,
+    dev_zero_timer: f32,
 }
 
 impl Menu {
@@ -85,6 +90,10 @@ impl Menu {
             error_timer: 0.0,
 
             player_name: String::from("Player"),
+
+            dev_mode: false,
+            dev_zero_count: 0,
+            dev_zero_timer: 0.0,
         }
     }
 
@@ -122,6 +131,24 @@ impl Menu {
         let h = rl.get_screen_height();
         let accent = self.theme().particle_color_primary;
         self.fx.update(dt, w, h, accent);
+
+        // Dev mode: triple-press 0 on main screen
+        if self.screen == Screen::Main {
+            if self.dev_zero_timer > 0.0 {
+                self.dev_zero_timer -= dt;
+                if self.dev_zero_timer <= 0.0 {
+                    self.dev_zero_count = 0;
+                }
+            }
+            if rl.is_key_pressed(KeyboardKey::KEY_ZERO) {
+                self.dev_zero_count += 1;
+                self.dev_zero_timer = 1.0;
+                if self.dev_zero_count >= 3 {
+                    self.dev_mode = !self.dev_mode;
+                    self.dev_zero_count = 0;
+                }
+            }
+        }
 
         match self.screen {
             Screen::Main => self.update_main(rl, dt, w, h),
@@ -403,6 +430,10 @@ impl Menu {
         }
 
         self.draw_footer(d, "W/S to navigate  |  Enter to select", w, h);
+
+        if self.dev_mode {
+            d.draw_text("DEV", 10, 10, 20, Color::new(255, 80, 80, 200));
+        }
     }
 
     fn draw_join_input(&self, d: &mut RaylibDrawHandle, w: i32, h: i32) {

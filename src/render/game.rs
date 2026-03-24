@@ -1,10 +1,11 @@
 use raylib::prelude::*;
 
+use crate::game::cards::{CardId, CARD_CATALOG};
 use crate::game::state::GameState;
 use crate::game::world::World;
 use crate::menu::theme::Theme;
 use crate::player::player::HIT_FLASH_DURATION;
-use crate::render::cards::{self, CardPickAnim};
+use crate::render::cards::{self as render_cards, CardPickAnim};
 use crate::render::crt::CrtFilter;
 use crate::render::hud;
 
@@ -20,6 +21,7 @@ pub fn draw_world(
     time: f32,
     card_anim: &CardPickAnim,
     local_player: u8,
+    dev_overlay: bool,
 ) {
     // Draw environment to render texture (CRT + aberration)
     {
@@ -57,10 +59,8 @@ pub fn draw_world(
                 let base = if platform.is_wall { theme.game_wall_color } else { theme.game_platform_color };
                 let wire = theme.game_wire_color;
 
-                // Outer frame (the border)
                 d3.draw_cube(c, s.x, s.y, s.z, wire);
 
-                // Inner inset face (lighter core)
                 let inset = 0.12_f32;
                 let inner = Color::new(
                     base.r.saturating_add(20),
@@ -73,7 +73,6 @@ pub fn draw_world(
                 let iz = (s.z - inset * 2.0).max(0.05);
                 d3.draw_cube(c, ix, iy, iz, inner);
 
-                // Outer wireframe for crispness
                 d3.draw_cube_wires(c, s.x, s.y, s.z, Color::new(
                     wire.r.saturating_add(40),
                     wire.g.saturating_add(40),
@@ -106,7 +105,7 @@ pub fn draw_world(
                 let py = player.position.y;
                 let pz = player.position.z;
 
-                let render_color = if player.hit_flash_timer > 0.0 {
+                let base_color = if player.hit_flash_timer > 0.0 {
                     let t = (player.hit_flash_timer / HIT_FLASH_DURATION).min(1.0);
                     Color::new(
                         (player.color.r as f32 + (255.0 - player.color.r as f32) * t) as u8,
@@ -118,16 +117,18 @@ pub fn draw_world(
                     player.color
                 };
 
-                let body_r = 0.38;
-                let head_r = 0.28;
-                let body_center = Vector3::new(px, py + 0.5, pz);
-                let head_center = Vector3::new(px, py + 1.15, pz);
+                let render_color = base_color;
+
+                let size_scale = player.size.x / 0.6;
+                let body_r = 0.38 * size_scale;
+                let head_r = 0.28 * size_scale;
+                let body_center = Vector3::new(px, py + 0.5 * size_scale, pz);
+                let head_center = Vector3::new(px, py + 1.15 * size_scale, pz);
                 d3.draw_sphere(body_center, body_r, render_color);
                 d3.draw_sphere(head_center, head_r, render_color);
 
-                // Eyes
-                let eye_r = 0.065;
-                let eye_spread = 0.12;
+                let eye_r = 0.065 * size_scale;
+                let eye_spread = 0.12 * size_scale;
                 let ax = player.aim_dir.x;
                 let ay = player.aim_dir.y;
 
@@ -149,7 +150,7 @@ pub fn draw_world(
                 let base_y = head_center.y + 0.03;
                 let base_z = head_center.z + surf_r * fwd_z;
 
-                let look_shift = 0.08;
+                let look_shift = 0.08 * size_scale;
                 let eye_cx = base_x + ax * look_shift * right_x;
                 let eye_cy = base_y + ay * look_shift;
                 let eye_cz = base_z + ax * look_shift * right_z;
@@ -190,27 +191,32 @@ pub fn draw_world(
                 d3.draw_cylinder_ex(shaft_end, tip, 0.1, 0.0, 6, arrow_color);
             }
 
-            // Bullets + tracers
+            // Bullets + tracers (radius scales with big bullets)
             for bullet in &world.bullets {
                 let vlen = (bullet.velocity.x.powi(2) + bullet.velocity.y.powi(2)).sqrt();
+                let trail_len = 0.8;
                 let trail_pos = if vlen > 0.001 {
-                    let t = 0.8;
                     Vector3::new(
-                        bullet.position.x - bullet.velocity.x / vlen * t,
-                        bullet.position.y - bullet.velocity.y / vlen * t,
+                        bullet.position.x - bullet.velocity.x / vlen * trail_len,
+                        bullet.position.y - bullet.velocity.y / vlen * trail_len,
                         bullet.position.z,
                     )
                 } else {
                     bullet.position
                 };
+                let tracer_r = (bullet.radius / 0.08) * 0.02; // scale tracer with bullet size
                 d3.draw_cylinder_ex(
                     trail_pos,
                     bullet.position,
-                    0.02,
-                    0.02,
+                    tracer_r,
+                    tracer_r,
                     4,
                     bullet.color,
                 );
+                // Big bullets: draw a sphere at the tip
+                if bullet.radius > 0.1 {
+                    d3.draw_sphere(bullet.position, bullet.radius * 0.5, bullet.color);
+                }
             }
 
             // Particles
@@ -232,7 +238,6 @@ pub fn draw_world(
         let mut d = rl.begin_drawing(thread);
         d.clear_background(Color::BLACK);
 
-        // Environment with CRT + aberration
         {
             let mut s = d.begin_shader_mode(&mut crt.shader);
             s.draw_texture_rec(
@@ -248,7 +253,6 @@ pub fn draw_world(
             );
         }
 
-        // Players with CRT scanlines only
         {
             let mut s = d.begin_shader_mode(&mut crt.shader_no_aberration);
             s.draw_texture_rec(
@@ -264,20 +268,114 @@ pub fn draw_world(
             );
         }
 
-        // HUD
         hud::draw_hud(&mut d, world, camera, render_w, render_h, local_player);
 
-        // Card pick overlay
         if matches!(world.state, GameState::CardPick { .. }) {
-            cards::draw_card_pick(&mut d, world, card_anim, render_w, render_h);
+            render_cards::draw_card_pick(&mut d, world, card_anim, render_w, render_h);
         }
 
-        // Match over overlay
         if matches!(world.state, GameState::MatchOver { .. }) {
-            cards::draw_match_over(&mut d, world, render_w, render_h);
+            render_cards::draw_match_over(&mut d, world, render_w, render_h);
+        }
+
+        if dev_overlay {
+            let held: Vec<CardId> = world.players.get(local_player as usize)
+                .map(|p| p.cards.iter().map(|(id, _)| *id).collect())
+                .unwrap_or_default();
+            draw_dev_overlay(&mut d, render_w, render_h, &held);
         }
 
         d.draw_fps(10, 10);
     }
 }
 
+// ── Dev mode overlay ─────────────────────────────────────────────────────────
+
+const DEV_COLS: i32 = 7;
+const DEV_CARD_W: i32 = 120;
+const DEV_CARD_H: i32 = 50;
+const DEV_GAP: i32 = 6;
+
+fn dev_card_rect(idx: usize, screen_w: i32, screen_h: i32) -> (i32, i32) {
+    let col = idx as i32 % DEV_COLS;
+    let row = idx as i32 / DEV_COLS;
+    let total_w = DEV_COLS * (DEV_CARD_W + DEV_GAP) - DEV_GAP;
+    let start_x = (screen_w - total_w) / 2;
+    let start_y = screen_h / 2 - 120;
+    (start_x + col * (DEV_CARD_W + DEV_GAP), start_y + row * (DEV_CARD_H + DEV_GAP))
+}
+
+pub fn draw_dev_overlay(d: &mut RaylibDrawHandle, screen_w: i32, screen_h: i32, held_cards: &[CardId]) {
+    d.draw_rectangle(0, 0, screen_w, screen_h, Color::new(0, 0, 0, 180));
+
+    let title = "DEV: Click to toggle cards (TAB to close)";
+    let title_size = 20;
+    let tw = d.measure_text(title, title_size);
+    d.draw_text(title, screen_w / 2 - tw / 2, screen_h / 2 - 160, title_size, Color::new(255, 80, 80, 220));
+
+    let mouse = d.get_mouse_position();
+
+    for (i, card_def) in CARD_CATALOG.iter().enumerate() {
+        let (cx, cy) = dev_card_rect(i, screen_w, screen_h);
+        let (cr, cg, cb) = card_def.color;
+        let active = held_cards.contains(&card_def.id);
+
+        let hovered = mouse.x >= cx as f32 && mouse.x <= (cx + DEV_CARD_W) as f32
+            && mouse.y >= cy as f32 && mouse.y <= (cy + DEV_CARD_H) as f32;
+
+        // Active cards get a brighter, colored background
+        let bg = if active {
+            Color::new(cr / 3 + 30, cg / 3 + 30, cb / 3 + 30, if hovered { 230 } else { 200 })
+        } else {
+            Color::new(cr / 6 + 15, cg / 6 + 15, cb / 6 + 15, if hovered { 200 } else { 100 })
+        };
+        d.draw_rectangle(cx, cy, DEV_CARD_W, DEV_CARD_H, bg);
+
+        let border_w = if active { 2.0 } else if hovered { 2.0 } else { 1.0 };
+        let border_color = if active {
+            Color::new(cr, cg, cb, 255)
+        } else if hovered {
+            Color::new(cr, cg, cb, 200)
+        } else {
+            Color::new(cr / 2 + 40, cg / 2 + 40, cb / 2 + 40, 120)
+        };
+        d.draw_rectangle_lines_ex(
+            Rectangle::new(cx as f32, cy as f32, DEV_CARD_W as f32, DEV_CARD_H as f32),
+            border_w,
+            border_color,
+        );
+
+        let tag = if card_def.is_ability() { "A" } else { "P" };
+        let tag_color = Color::new(cr / 2 + 80, cg / 2 + 80, cb / 2 + 80, 200);
+        d.draw_text(tag, cx + 4, cy + 4, 12, tag_color);
+
+        // Active checkmark
+        if active {
+            let check_color = Color::new(100, 255, 100, 255);
+            d.draw_text("ON", cx + DEV_CARD_W - 24, cy + 4, 12, check_color);
+        }
+
+        let name_alpha = if active { 255 } else { 160 };
+        let name_size = 14;
+        let nw = d.measure_text(card_def.name, name_size);
+        d.draw_text(card_def.name, cx + DEV_CARD_W / 2 - nw / 2, cy + 8, name_size,
+            Color::new(cr, cg, cb, name_alpha));
+
+        let desc_size = 10;
+        let dw = d.measure_text(card_def.description, desc_size);
+        d.draw_text(card_def.description, cx + DEV_CARD_W / 2 - dw / 2, cy + 28, desc_size,
+            Color::new(180, 180, 180, if active { 220 } else { 140 }));
+    }
+}
+
+pub fn dev_overlay_click(mouse: Vector2, screen_w: i32, screen_h: i32) -> Option<CardId> {
+    for (i, card_def) in CARD_CATALOG.iter().enumerate() {
+        let (cx, cy) = dev_card_rect(i, screen_w, screen_h);
+        if mouse.x >= cx as f32 && mouse.x <= (cx + DEV_CARD_W) as f32
+            && mouse.y >= cy as f32 && mouse.y <= (cy + DEV_CARD_H) as f32
+        {
+            return Some(card_def.id);
+        }
+    }
+    None
+}

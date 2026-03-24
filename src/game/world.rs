@@ -10,7 +10,7 @@ use crate::level::level::{self, Level};
 use crate::lobby::state::LobbyState;
 use crate::player::input::PlayerInput;
 use crate::player::movement;
-use crate::player::player::Player;
+use crate::player::player::{Player, HIT_FLASH_DURATION};
 
 pub const MAX_BULLETS: i32 = 3;
 pub const RELOAD_TIME: f32 = 1.5;
@@ -24,6 +24,10 @@ const CARD_ENTRANCE_DURATION: f32 = 0.8;
 const CARD_EXIT_DURATION: f32 = 0.8;
 const MATCH_OVER_DURATION: f32 = 5.0;
 
+const STOMP_RADIUS: f32 = 3.0;
+const STOMP_DAMAGE: f32 = 35.0;
+const STOMP_SLAM_SPEED: f32 = 35.0;
+
 pub struct World {
     pub players: Vec<Player>,
     pub bullets: Vec<Bullet>,
@@ -32,8 +36,8 @@ pub struct World {
     pub state: GameState,
     pub scores: Vec<i32>,
     pub rng: Rng,
-    pub cursor_positions: Vec<(f32, f32)>, // normalized cursor per player
-    pub card_hover: u8, // 0xFF = none, 0-2 = picker hovering this card
+    pub cursor_positions: Vec<(f32, f32)>,
+    pub card_hover: u8,
 }
 
 impl World {
@@ -68,26 +72,24 @@ impl World {
     }
 
     fn reset_round(&mut self) {
-        // Pick a new random map
         self.level = level::random_level(self.rng.next());
 
         for (i, player) in self.players.iter_mut().enumerate() {
             player.position = self.level.spawn_points[i];
             player.velocity = Vector3::new(0.0, 0.0, 0.0);
-            player.hp = player.max_hp;
             player.alive = true;
             player.hit_flash_timer = 0.0;
-            player.bullets_remaining = MAX_BULLETS;
             player.reload_timer = 0.0;
             player.shoot_cooldown = 0.0;
             player.aim_dir = Vector2::new(if i % 2 == 0 { 1.0 } else { -1.0 }, 0.0);
-            // Reset ability cooldowns but keep cards
+            player.stomp_active = false;
             for (_, cd) in player.cards.iter_mut() {
                 *cd = 0.0;
             }
-            // Recompute stats from powerup cards and apply
             player.stats = cards::compute_stats(&player.cards);
             cards::apply_stats(player, &player.stats.clone());
+            player.hp = player.max_hp;
+            player.bullets_remaining = MAX_BULLETS + player.stats.extra_ammo;
         }
         self.bullets.clear();
         self.particles.clear();
@@ -125,14 +127,12 @@ impl World {
         }
     }
 
-    /// Build the pick order: all losers (non-winner, all players)
     fn build_pick_order(&self, winner_idx: u8) -> Vec<u8> {
         (0..self.players.len() as u8)
             .filter(|&i| i != winner_idx)
             .collect()
     }
 
-    /// Enter card pick phase for the first loser
     fn enter_card_pick(&mut self, winner_idx: u8) {
         let mut pick_order = self.build_pick_order(winner_idx);
         if pick_order.is_empty() {
@@ -157,7 +157,6 @@ impl World {
         };
     }
 
-    /// Process a card choice from a player (called by server)
     pub fn process_card_choice(&mut self, player_index: u8, card_slot: u8) {
         if let GameState::CardPick { current_picker, chosen_card, .. } = &mut self.state {
             if player_index == *current_picker && chosen_card.is_none() && card_slot < 3 {
@@ -166,19 +165,31 @@ impl World {
         }
     }
 
+    /// Dev mode: toggle a card on/off for a player
+    pub fn dev_toggle_card(&mut self, player_idx: usize, card_id: cards::CardId) {
+        if player_idx < self.players.len() {
+            let p = &mut self.players[player_idx];
+            if let Some(pos) = p.cards.iter().position(|(id, _)| *id == card_id) {
+                p.cards.remove(pos);
+            } else {
+                p.cards.push((card_id, 0.0));
+            }
+            p.stats = cards::compute_stats(&p.cards);
+            cards::apply_stats(p, &p.stats.clone());
+        }
+    }
+
     // ── Server-authoritative update (processes ALL players) ──────────────────
 
     pub fn server_update(&mut self, inputs: &[PlayerInput], dt: f32) -> Vec<GameEvent> {
         let mut events = Vec::new();
 
-        // Store cursor positions from inputs
         for (i, inp) in inputs.iter().enumerate() {
             if i < self.cursor_positions.len() {
                 self.cursor_positions[i] = (inp.cursor_x, inp.cursor_y);
             }
         }
 
-        // Read hover_card from the current picker's input
         if let GameState::CardPick { current_picker, .. } = &self.state {
             let pi = *current_picker as usize;
             self.card_hover = inputs.get(pi).map(|inp| inp.hover_card).unwrap_or(0xFF);
@@ -189,9 +200,10 @@ impl World {
         match &self.state {
             GameState::RoundStart { timer } => {
                 let new_timer = *timer - dt;
-                // Let players look around during countdown
+                // Players can move during countdown but not shoot or use abilities
                 for (i, inp) in inputs.iter().enumerate() {
-                    if i < self.players.len() {
+                    if i < self.players.len() && self.players[i].alive {
+                        movement::update(&mut self.players[i], &inp, &self.level.platforms, dt);
                         self.players[i].aim_dir = inp.aim_dir;
                     }
                 }
@@ -209,7 +221,6 @@ impl World {
                 let timer = *timer;
                 let slow_dt = dt * SLOW_MO_FACTOR;
 
-                // Winner can still move during slow-mo
                 if let Some(inp) = inputs.get(wi as usize) {
                     if (wi as usize) < self.players.len() && self.players[wi as usize].alive {
                         movement::update(&mut self.players[wi as usize], inp, &self.level.platforms, slow_dt);
@@ -219,7 +230,6 @@ impl World {
 
                 let new_timer = timer - dt;
                 if new_timer <= 0.0 {
-                    // Check if anyone has won the match
                     if self.scores.get(wi as usize).copied().unwrap_or(0) >= WINS_TO_MATCH {
                         self.state = GameState::MatchOver {
                             winner_index: wi,
@@ -245,7 +255,6 @@ impl World {
                 let new_timer = *timer - dt;
                 let wi = *winner_index;
                 if new_timer <= 0.0 {
-                    // Match over — stay in this state until Escape (handled by main loop)
                     self.state = GameState::MatchOver { winner_index: wi, timer: 0.0 };
                 } else {
                     self.state = GameState::MatchOver { winner_index: wi, timer: new_timer };
@@ -257,7 +266,6 @@ impl World {
     }
 
     fn server_update_card_pick(&mut self, dt: f32) {
-        // Extract state to avoid borrow issues
         let (winner_index, current_picker, offered_cards, pick_order, phase_timer, chosen_card, exit_timer) =
             if let GameState::CardPick {
                 winner_index, current_picker, offered_cards, pick_order, phase_timer, chosen_card, exit_timer,
@@ -268,17 +276,14 @@ impl World {
             };
 
         if chosen_card.is_some() {
-            // Card was chosen — tick exit timer
             let new_exit = exit_timer + dt;
             if new_exit >= CARD_EXIT_DURATION {
-                // Store the ability on the picker
                 if let Some(slot) = chosen_card {
                     let card_id_u8 = offered_cards[slot as usize];
                     if let Some(card_id) = cards::CardId::from_u8(card_id_u8) {
                         let picker_idx = current_picker as usize;
                         if picker_idx < self.players.len() {
                             self.players[picker_idx].cards.push((card_id, 0.0));
-                            // Recompute stats if it's a powerup
                             let p = &mut self.players[picker_idx];
                             p.stats = cards::compute_stats(&p.cards);
                             cards::apply_stats(p, &p.stats.clone());
@@ -286,7 +291,6 @@ impl World {
                     }
                 }
 
-                // Advance to next picker or round
                 if pick_order.is_empty() {
                     self.reset_round();
                 } else {
@@ -316,7 +320,6 @@ impl World {
                 };
             }
         } else {
-            // Entrance / waiting for pick
             let new_phase = (phase_timer - dt).max(0.0);
             self.state = GameState::CardPick {
                 winner_index, current_picker, offered_cards, pick_order,
@@ -326,21 +329,53 @@ impl World {
     }
 
     fn server_update_playing(&mut self, inputs: &[PlayerInput], dt: f32, events: &mut Vec<GameEvent>) {
-        // Process input for ALL alive players
         for i in 0..self.players.len() {
             if !self.players[i].alive {
                 continue;
             }
             let inp = inputs.get(i).cloned().unwrap_or_else(PlayerInput::empty);
 
+            let was_airborne = !self.players[i].grounded;
             movement::update(&mut self.players[i], &inp, &self.level.platforms, dt);
             self.players[i].aim_dir = inp.aim_dir;
 
+            // Stomp: force slam when falling after hop
+            if self.players[i].stomp_active && self.players[i].velocity.y < 0.0 {
+                self.players[i].velocity.y = -STOMP_SLAM_SPEED;
+            }
+
+            // Stomp: check for landing AoE
+            if self.players[i].stomp_active && was_airborne && self.players[i].grounded {
+                self.players[i].stomp_active = false;
+                let stomp_pos = self.players[i].position;
+                for j in 0..self.players.len() {
+                    if j == i || !self.players[j].alive { continue; }
+                    let dx = self.players[j].position.x - stomp_pos.x;
+                    let dy = self.players[j].position.y - stomp_pos.y;
+                    let dist = (dx * dx + dy * dy).sqrt();
+                    if dist < STOMP_RADIUS {
+                        let falloff = 1.0 - (dist / STOMP_RADIUS);
+                        self.players[j].hp = (self.players[j].hp - STOMP_DAMAGE * falloff).max(0.0);
+                        self.players[j].hit_flash_timer = HIT_FLASH_DURATION;
+                        let hit_pos = self.players[j].render_center();
+                        events.push(GameEvent::PlayerHit {
+                            x: hit_pos.x, y: hit_pos.y, z: hit_pos.z,
+                            r: self.players[j].color.r, g: self.players[j].color.g, b: self.players[j].color.b,
+                        });
+                    }
+                }
+                events.push(GameEvent::PlayerDied {
+                    x: stomp_pos.x, y: stomp_pos.y, z: stomp_pos.z,
+                    r: 255, g: 160, b: 60,
+                });
+            }
+
             // Reload
+            let max_ammo = MAX_BULLETS + self.players[i].stats.extra_ammo;
             if self.players[i].reload_timer > 0.0 {
                 self.players[i].reload_timer = (self.players[i].reload_timer - dt).max(0.0);
                 if self.players[i].reload_timer <= 0.0 {
-                    self.players[i].bullets_remaining = MAX_BULLETS;
+                    self.players[i].bullets_remaining = max_ammo;
                 }
             }
 
@@ -358,22 +393,64 @@ impl World {
                     self.players[i].position.y + 1.1 + aim.y * 0.5,
                     self.players[i].position.z,
                 );
-                self.bullets.push(Bullet::new(spawn, aim, i, color));
-                self.players[i].bullets_remaining -= 1;
-                self.players[i].shoot_cooldown = SHOOT_COOLDOWN;
-                if self.players[i].bullets_remaining == 0 {
-                    self.players[i].reload_timer = RELOAD_TIME * self.players[i].stats.reload_time_mult;
+                let stats = self.players[i].stats.clone();
+
+                if stats.shotgun {
+                    // Shotgun: dump all remaining ammo in one blast with short range
+                    let count = self.players[i].bullets_remaining;
+                    let total_spread = std::f32::consts::PI / 6.0; // 30° total fan
+                    for s in 0..count {
+                        let t = if count > 1 {
+                            (s as f32 / (count - 1) as f32) - 0.5
+                        } else {
+                            0.0
+                        };
+                        let angle = t * total_spread;
+                        let cos_a = angle.cos();
+                        let sin_a = angle.sin();
+                        let rotated = Vector2::new(
+                            aim.x * cos_a - aim.y * sin_a,
+                            aim.x * sin_a + aim.y * cos_a,
+                        );
+                        self.bullets.push(Bullet::new_with_stats(spawn, rotated, i, color, &stats));
+                    }
+                    self.players[i].bullets_remaining = 0;
+                } else {
+                    // Normal shot
+                    self.bullets.push(Bullet::new_with_stats(spawn, aim, i, color, &stats));
+                    self.players[i].bullets_remaining -= 1;
+
+                    // Triple shot: 2 extra bullets at ±45°
+                    if stats.triple_shot {
+                        let angle = std::f32::consts::PI / 4.0;
+                        for &sign in &[-1.0_f32, 1.0] {
+                            let a = sign * angle;
+                            let cos_a = a.cos();
+                            let sin_a = a.sin();
+                            let rotated = Vector2::new(
+                                aim.x * cos_a - aim.y * sin_a,
+                                aim.x * sin_a + aim.y * cos_a,
+                            );
+                            self.bullets.push(Bullet::new_with_stats(spawn, rotated, i, color, &stats));
+                        }
+                    }
+                }
+
+                self.players[i].shoot_cooldown = SHOOT_COOLDOWN * stats.shoot_cooldown_mult;
+                if self.players[i].bullets_remaining <= 0 {
+                    self.players[i].bullets_remaining = 0;
+                    self.players[i].reload_timer = RELOAD_TIME;
                 }
             }
 
-            // Tick ability cooldowns (only for abilities, not powerups)
+            // Tick ability cooldowns
             for (card_id, cd) in self.players[i].cards.iter_mut() {
                 if cards::CARD_CATALOG[*card_id as u8 as usize].is_ability() {
                     *cd = (*cd - dt).max(0.0);
                 }
             }
 
-            // Activate abilities on right-click (skip powerups)
+            // Activate abilities on right-click
             if inp.ability_pressed {
                 let to_activate: Vec<(usize, cards::CardId)> = self.players[i].cards.iter()
                     .enumerate()
@@ -383,8 +460,34 @@ impl World {
                     .map(|(j, (card_id, _))| (j, *card_id))
                     .collect();
                 for (j, card_id) in to_activate {
-                    let cd = cards::activate_ability(card_id, &mut self.players[i]);
+                    let (cd, effect) = cards::activate_ability(card_id, &mut self.players[i]);
                     self.players[i].cards[j].1 = cd;
+                    match effect {
+                        cards::AbilityEffect::Swap => {
+                            let my_pos = self.players[i].position;
+                            let mut nearest = None;
+                            let mut nearest_dist = f32::MAX;
+                            for k in 0..self.players.len() {
+                                if k == i || !self.players[k].alive { continue; }
+                                let dx = self.players[k].position.x - my_pos.x;
+                                let dy = self.players[k].position.y - my_pos.y;
+                                let dist = (dx * dx + dy * dy).sqrt();
+                                if dist < nearest_dist {
+                                    nearest_dist = dist;
+                                    nearest = Some(k);
+                                }
+                            }
+                            if let Some(k) = nearest {
+                                let tmp_pos = self.players[i].position;
+                                let tmp_vel = self.players[i].velocity;
+                                self.players[i].position = self.players[k].position;
+                                self.players[i].velocity = self.players[k].velocity;
+                                self.players[k].position = tmp_pos;
+                                self.players[k].velocity = tmp_vel;
+                            }
+                        }
+                        cards::AbilityEffect::None => {}
+                    }
                 }
             }
         }
@@ -469,6 +572,7 @@ impl World {
             vel_y: b.velocity.y,
             owner: b.owner as u8,
             lifetime: b.lifetime,
+            radius: b.radius,
         }).collect();
 
         // Card pick fields
@@ -480,7 +584,6 @@ impl World {
                 (0, [0, 0, 0], 0, 0.0, 0xFF, 0.0, 0xFF)
             };
 
-        // MatchOver fields
         let (match_winner, match_timer) = if let GameState::MatchOver { winner_index, timer } = &self.state {
             (*winner_index, *timer)
         } else {
@@ -513,18 +616,15 @@ impl World {
     // ── Snapshot application (client) ────────────────────────────────────────
 
     pub fn apply_snapshot(&mut self, snap: &WorldSnapshot) {
-        // Swap level if changed
         if snap.level_id != self.level.id {
             self.level = level::level_by_id(snap.level_id);
         }
 
-        // Update game state
         let names: Vec<String> = self.players.iter().map(|p| p.name.clone()).collect();
         let colors: Vec<Color> = self.players.iter().map(|p| p.color).collect();
         self.state = snap.game_state(&names, &colors);
         self.card_hover = snap.card_hover;
 
-        // Update players
         for (i, ps) in snap.players.iter().enumerate() {
             if i >= self.players.len() { break; }
             let p = &mut self.players[i];
@@ -540,30 +640,25 @@ impl World {
             p.shoot_cooldown = ps.shoot_cooldown;
             p.bullets_remaining = ps.bullets_remaining as i32;
             p.alive = ps.alive;
-            // Update cursor positions
             if i < self.cursor_positions.len() {
                 self.cursor_positions[i] = (ps.cursor_x, ps.cursor_y);
             }
-            // Update cards
             p.cards.clear();
             for (card_id_u8, cooldown) in &ps.cards {
                 if let Some(card_id) = cards::CardId::from_u8(*card_id_u8) {
                     p.cards.push((card_id, *cooldown));
                 }
             }
-            // Recompute stats from cards
             p.stats = cards::compute_stats(&p.cards);
-            p.max_hp = 100.0 + p.stats.max_hp_bonus;
+            p.max_hp = (100.0 + p.stats.max_hp_bonus) * p.stats.max_hp_mult;
         }
 
-        // Update scores
         for (i, &s) in snap.scores.iter().enumerate() {
             if i < self.scores.len() {
                 self.scores[i] = s;
             }
         }
 
-        // Rebuild bullets from snapshot
         self.bullets.clear();
         for bs in &snap.bullets {
             let owner = bs.owner as usize;
@@ -579,11 +674,15 @@ impl World {
                 owner,
                 lifetime: bs.lifetime,
                 color,
+                radius: bs.radius,
+                damage: 0.0,
+                bounces_remaining: 0,
+                homing: false,
+                piercing: false,
+                explosive: false,
             });
         }
 
-        // Spawn particles from events
         spawn_from_events(&snap.events, &mut self.particles, &mut self.rng);
     }
-
 }

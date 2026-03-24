@@ -31,7 +31,7 @@ pub struct PlayerSnapshot {
     pub alive: bool,
     pub cursor_x: f32,
     pub cursor_y: f32,
-    pub cards: Vec<(u8, f32)>, // (CardId as u8, cooldown — 0.0 for powerups)
+    pub cards: Vec<(u8, f32)>,
 }
 
 #[derive(Debug, Clone)]
@@ -46,13 +46,14 @@ pub struct BulletSnapshot {
     pub vel_y: f32,
     pub owner: u8,
     pub lifetime: f32,
+    pub radius: f32,
 }
 
 #[derive(Debug, Clone)]
 pub struct WorldSnapshot {
-    pub state_tag: u8, // 0=RoundStart, 1=Playing, 2=RoundEnd, 3=CardPick, 4=MatchOver
+    pub state_tag: u8,
     pub state_timer: f32,
-    pub time_scale: f32, // 1.0 normal, 0.25 slow-mo, 0.0 frozen
+    pub time_scale: f32,
     pub level_id: u8,
     pub winner_index: u8,
     pub player_count: u8,
@@ -60,15 +61,15 @@ pub struct WorldSnapshot {
     pub scores: Vec<i32>,
     pub bullets: Vec<BulletSnapshot>,
     pub events: Vec<GameEvent>,
-    // Card pick fields (only meaningful when state_tag == 3)
+    // Card pick fields
     pub card_current_picker: u8,
     pub card_offered: [u8; 3],
     pub card_remaining_pickers: u8,
     pub card_phase_timer: f32,
-    pub card_chosen: u8,      // 0xFF = none
+    pub card_chosen: u8,
     pub card_exit_timer: f32,
-    pub card_hover: u8,       // 0xFF = none, 0-2 = picker is hovering this card
-    // MatchOver fields (only meaningful when state_tag == 4)
+    pub card_hover: u8,
+    // MatchOver fields
     pub match_winner: u8,
     pub match_timer: f32,
 }
@@ -98,8 +99,6 @@ pub fn encode_game_input(input: &PlayerInput) -> Vec<u8> {
 }
 
 pub fn decode_game_input(data: &[u8]) -> Option<PlayerInput> {
-    // data starts after the type byte: 4(move) + 1(flags) + 8(aim) + 8(cursor) = 21 bytes
-    // Accept old 13-byte format too for backwards compat
     if data.len() < 13 {
         return None;
     }
@@ -158,16 +157,14 @@ fn read_u8(data: &[u8], pos: &mut usize) -> u8 {
 
 pub fn encode_snapshot(snap: &WorldSnapshot) -> Vec<u8> {
     let mut payload = Vec::with_capacity(512);
-    payload.push(0x90); // type
+    payload.push(0x90);
 
-    // Game state
     payload.push(snap.state_tag);
     push_f32(&mut payload, snap.state_timer);
     push_f32(&mut payload, snap.time_scale);
     payload.push(snap.level_id);
     payload.push(snap.winner_index);
 
-    // Players
     payload.push(snap.player_count);
     for p in &snap.players {
         push_f32(&mut payload, p.pos_x);
@@ -191,12 +188,10 @@ pub fn encode_snapshot(snap: &WorldSnapshot) -> Vec<u8> {
         }
     }
 
-    // Scores
     for s in &snap.scores {
         push_i32(&mut payload, *s);
     }
 
-    // Bullets
     payload.push(snap.bullets.len() as u8);
     for b in &snap.bullets {
         push_f32(&mut payload, b.pos_x);
@@ -209,9 +204,9 @@ pub fn encode_snapshot(snap: &WorldSnapshot) -> Vec<u8> {
         push_f32(&mut payload, b.vel_y);
         payload.push(b.owner);
         push_f32(&mut payload, b.lifetime);
+        push_f32(&mut payload, b.radius);
     }
 
-    // Events
     payload.push(snap.events.len() as u8);
     for ev in &snap.events {
         match ev {
@@ -249,7 +244,7 @@ pub fn encode_snapshot(snap: &WorldSnapshot) -> Vec<u8> {
         }
     }
 
-    // Card pick fields (always written for simplicity; only meaningful when state_tag==3)
+    // Card pick fields
     payload.push(snap.card_current_picker);
     payload.push(snap.card_offered[0]);
     payload.push(snap.card_offered[1]);
@@ -272,7 +267,6 @@ pub fn encode_snapshot(snap: &WorldSnapshot) -> Vec<u8> {
 }
 
 pub fn decode_snapshot(data: &[u8]) -> Option<WorldSnapshot> {
-    // data starts after the type byte
     if data.len() < 4 {
         return None;
     }
@@ -332,7 +326,7 @@ pub fn decode_snapshot(data: &[u8]) -> Option<WorldSnapshot> {
     let bullet_count = read_u8(data, &mut pos);
     let mut bullets = Vec::with_capacity(bullet_count as usize);
     for _ in 0..bullet_count {
-        if pos + 37 > data.len() { return None; }
+        if pos + 41 > data.len() { return None; }
         bullets.push(BulletSnapshot {
             pos_x: read_f32(data, &mut pos),
             pos_y: read_f32(data, &mut pos),
@@ -344,6 +338,7 @@ pub fn decode_snapshot(data: &[u8]) -> Option<WorldSnapshot> {
             vel_y: read_f32(data, &mut pos),
             owner: read_u8(data, &mut pos),
             lifetime: read_f32(data, &mut pos),
+            radius: read_f32(data, &mut pos),
         });
     }
 
@@ -455,7 +450,7 @@ impl WorldSnapshot {
                 winner_index: self.winner_index,
                 current_picker: self.card_current_picker,
                 offered_cards: self.card_offered,
-                pick_order: Vec::new(), // client doesn't need the full queue
+                pick_order: Vec::new(),
                 phase_timer: self.card_phase_timer,
                 chosen_card: if self.card_chosen == 0xFF { None } else { Some(self.card_chosen) },
                 exit_timer: self.card_exit_timer,
