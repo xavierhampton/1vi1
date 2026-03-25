@@ -1,12 +1,10 @@
-use raylib::prelude::{Color, Vector2, Vector3};
+use raylib::prelude::{Color, Vector3};
 
 use crate::combat::bullet::{Bullet, BULLET_GRAVITY};
 use crate::game::net::GameEvent;
 use crate::level::platforms::Platform;
 use crate::physics::collision::AABB;
 use crate::player::player::{Player, HIT_FLASH_DURATION};
-
-const EXPLOSIVE_RADIUS: f32 = 3.0;
 
 pub struct StickyBombData {
     pub position: Vector3,
@@ -16,12 +14,24 @@ pub struct StickyBombData {
     pub color: Color,
 }
 
+/// Hit info returned per bullet-player collision for world-level processing
+pub struct BulletHitInfo {
+    pub target: usize,
+    pub owner: usize,
+    pub damage: f32,
+    pub bullet_x: f32,
+    pub bullet_y: f32,
+    pub poison: bool,
+    pub ice: bool,
+    pub void_pull: bool,
+}
+
 pub fn update_bullets(
     bullets: &mut Vec<Bullet>,
     players: &mut [Player],
     platforms: &[Platform],
     dt: f32,
-) -> (Vec<GameEvent>, Vec<StickyBombData>) {
+) -> (Vec<GameEvent>, Vec<StickyBombData>, Vec<BulletHitInfo>) {
     let mut events = Vec::new();
 
     // Collect alive player positions for homing (immutable snapshot)
@@ -30,12 +40,9 @@ pub fn update_bullets(
         .map(|(i, p)| (i, p.position.x, p.position.y + p.size.y / 2.0))
         .collect();
 
-    // Deferred effects (applied after bullet loop to avoid borrow conflicts)
-    let mut damage_queue: Vec<(usize, f32, f32, f32, bool, usize)> = Vec::new(); // (idx, dmg, bx, by, poison, owner)
+    let mut damage_queue: Vec<BulletHitInfo> = Vec::new();
     let mut heal_queue: Vec<(usize, f32)> = Vec::new();
-    let mut explosion_queue: Vec<(f32, f32, usize, f32, Color)> = Vec::new();
     let mut sticky_queue: Vec<StickyBombData> = Vec::new();
-    let mut new_bullets: Vec<Bullet> = Vec::new();
 
     for bullet in bullets.iter_mut() {
         bullet.prev_position = bullet.position;
@@ -68,14 +75,7 @@ pub fn update_bullets(
             }
         }
 
-        if bullet.hot_potato {
-            let accel = 1.0 + dt * 0.8;
-            bullet.velocity.x *= accel;
-            bullet.velocity.y *= accel;
-            bullet.velocity.y -= BULLET_GRAVITY * bullet.gravity_mult * dt * 0.2;
-        } else {
-            bullet.velocity.y -= BULLET_GRAVITY * bullet.gravity_mult * dt;
-        }
+        bullet.velocity.y -= BULLET_GRAVITY * bullet.gravity_mult * dt;
         bullet.position.x += bullet.velocity.x * dt;
         bullet.position.y += bullet.velocity.y * dt;
         bullet.lifetime -= dt;
@@ -100,7 +100,7 @@ pub fn update_bullets(
 
         // Platform collision
         for platform in platforms {
-            if !bullet.phantom && swept.overlaps(&platform.aabb) {
+            if swept.overlaps(&platform.aabb) {
                 if bullet.sticky {
                     sticky_queue.push(StickyBombData {
                         position: bullet.prev_position,
@@ -111,7 +111,6 @@ pub fn update_bullets(
                     });
                     bullet.lifetime = 0.0;
                 } else if bullet.bounces_remaining > 0 {
-                    // Rubber: bounce off wall
                     bullet.bounces_remaining -= 1;
                     let pen_left = baabb.max.x - platform.aabb.min.x;
                     let pen_right = platform.aabb.max.x - baabb.min.x;
@@ -133,12 +132,6 @@ pub fn update_bullets(
                         x: bullet.prev_position.x, y: bullet.prev_position.y, z: bullet.prev_position.z,
                         r: bullet.color.r, g: bullet.color.g, b: bullet.color.b,
                     });
-                    if bullet.explosive {
-                        explosion_queue.push((
-                            bullet.position.x, bullet.position.y,
-                            bullet.owner, bullet.damage * 0.5, bullet.color,
-                        ));
-                    }
                     bullet.lifetime = 0.0;
                 }
                 break;
@@ -151,11 +144,9 @@ pub fn update_bullets(
         let self_grace = bullet.lifetime > (crate::combat::bullet::BULLET_LIFETIME - 0.15);
         for (i, player) in players.iter().enumerate() {
             if !player.alive || player.ghost_timer > 0.0 { continue; }
-            // Skip self-hit for a brief grace period after firing
             if i == bullet.owner && self_grace { continue; }
 
             if baabb.overlaps(&player.aabb()) {
-                // Sticky: attach bomb to player instead of dealing damage
                 if bullet.sticky {
                     sticky_queue.push(StickyBombData {
                         position: player.render_center(),
@@ -174,44 +165,22 @@ pub fn update_bullets(
                     r: player.color.r, g: player.color.g, b: player.color.b,
                 });
 
-                damage_queue.push((i, bullet.damage, bullet.position.x, bullet.position.y, bullet.poison, bullet.owner));
+                damage_queue.push(BulletHitInfo {
+                    target: i,
+                    owner: bullet.owner,
+                    damage: bullet.damage,
+                    bullet_x: bullet.position.x,
+                    bullet_y: bullet.position.y,
+                    poison: bullet.poison,
+                    ice: bullet.ice,
+                    void_pull: bullet.void_pull,
+                });
 
                 // Vampire: heal attacker
                 if bullet.owner < players.len() {
                     let vamp = players[bullet.owner].stats.vampire_heal;
                     if vamp > 0.0 {
                         heal_queue.push((bullet.owner, vamp));
-                    }
-                }
-
-                // Explosive: AoE on player hit
-                if bullet.explosive {
-                    explosion_queue.push((
-                        bullet.position.x, bullet.position.y,
-                        bullet.owner, bullet.damage * 0.5, bullet.color,
-                    ));
-                }
-
-                // Split shot: spawn 2 bullets at ±30°
-                if bullet.split_on_hit {
-                    let speed = (bullet.velocity.x.powi(2) + bullet.velocity.y.powi(2)).sqrt();
-                    if speed > 0.01 {
-                        let dx = bullet.velocity.x / speed;
-                        let dy = bullet.velocity.y / speed;
-                        let angle = std::f32::consts::PI / 6.0;
-                        for &sign in &[-1.0_f32, 1.0] {
-                            let a = sign * angle;
-                            let nx = dx * a.cos() - dy * a.sin();
-                            let ny = dx * a.sin() + dy * a.cos();
-                            let mut split = bullet.clone();
-                            split.position = bullet.position;
-                            split.prev_position = bullet.position;
-                            split.velocity = Vector2::new(nx * speed * 0.7, ny * speed * 0.7);
-                            split.lifetime = bullet.lifetime.min(1.5);
-                            split.damage *= 0.5;
-                            split.split_on_hit = false;
-                            new_bullets.push(split);
-                        }
                     }
                 }
 
@@ -223,28 +192,56 @@ pub fn update_bullets(
         }
     }
 
-    // Apply deferred damage
-    for (idx, dmg, bx, by, poison, owner) in &damage_queue {
-        if *idx < players.len() && players[*idx].alive {
-            let effective_dmg = dmg * players[*idx].stats.damage_taken_mult;
-            players[*idx].hp = (players[*idx].hp - effective_dmg).max(0.0);
-            players[*idx].hit_flash_timer = HIT_FLASH_DURATION;
-            if players[*idx].stats.bounceback && !players[*idx].stats.knockback_immune {
-                let dx = players[*idx].position.x - *bx;
-                let dy = (players[*idx].position.y + players[*idx].size.y / 2.0) - *by;
+    // Apply deferred damage + on-hit effects
+    for hit in &damage_queue {
+        if hit.target < players.len() && players[hit.target].alive {
+            let effective_dmg = hit.damage * players[hit.target].stats.damage_taken_mult;
+            players[hit.target].hp = (players[hit.target].hp - effective_dmg).max(0.0);
+            players[hit.target].hit_flash_timer = HIT_FLASH_DURATION;
+
+            // Knockback (offensive: check OWNER's stats, push TARGET away from bullet)
+            if hit.owner < players.len() && players[hit.owner].stats.knockback {
+                let dx = players[hit.target].position.x - hit.bullet_x;
+                let dy = (players[hit.target].position.y + players[hit.target].size.y / 2.0) - hit.bullet_y;
                 let dist = (dx * dx + dy * dy).sqrt().max(0.01);
-                let knockback = 20.0;
-                players[*idx].velocity.x += (dx / dist) * knockback;
-                players[*idx].velocity.y += (dy / dist) * knockback;
+                let knockback_force = 20.0;
+                players[hit.target].velocity.x += (dx / dist) * knockback_force;
+                players[hit.target].velocity.y += (dy / dist) * knockback_force;
             }
-            if *poison {
-                players[*idx].poison_timer = 3.0;
+
+            // Poison
+            if hit.poison {
+                players[hit.target].poison_timer = 3.0;
             }
-            if players[*idx].stats.adrenaline {
-                players[*idx].adrenaline_timer = 2.0;
+
+            // Ice: slow target
+            if hit.ice {
+                players[hit.target].slow_timer = 2.0;
             }
-            if *owner < players.len() && players[*owner].stats.upsizer {
-                players[*idx].upsized_stacks += 1;
+
+            // Void pull: suck target toward bullet impact point
+            if hit.void_pull {
+                let dx = hit.bullet_x - players[hit.target].position.x;
+                let dy = hit.bullet_y - (players[hit.target].position.y + players[hit.target].size.y / 2.0);
+                let dist = (dx * dx + dy * dy).sqrt().max(0.01);
+                let pull_force = 12.0;
+                players[hit.target].velocity.x += (dx / dist) * pull_force;
+                players[hit.target].velocity.y += (dy / dist) * pull_force;
+            }
+
+            // Adrenaline: defender gets speed buff when hit
+            if players[hit.target].stats.adrenaline {
+                players[hit.target].adrenaline_timer = 3.0;
+            }
+
+            // Bloodthirsty: attacker gets speed+DMG buff when hitting
+            if hit.owner < players.len() && players[hit.owner].stats.bloodthirsty {
+                players[hit.owner].bloodthirsty_timer = 3.0;
+            }
+
+            // Upsize: attacker makes target bigger
+            if hit.owner < players.len() && players[hit.owner].stats.upsize {
+                players[hit.target].upsized_stacks += 1;
             }
         }
     }
@@ -256,31 +253,6 @@ pub fn update_bullets(
         }
     }
 
-    // Apply explosive AoE
-    for (ex, ey, owner, dmg, color) in &explosion_queue {
-        for (i, player) in players.iter_mut().enumerate() {
-            if i == *owner || !player.alive { continue; }
-            let dx = player.position.x - *ex;
-            let dy = (player.position.y + player.size.y / 2.0) - *ey;
-            let dist = (dx * dx + dy * dy).sqrt();
-            if dist < EXPLOSIVE_RADIUS {
-                let falloff = 1.0 - (dist / EXPLOSIVE_RADIUS);
-                player.hp = (player.hp - *dmg * falloff).max(0.0);
-                player.hit_flash_timer = HIT_FLASH_DURATION;
-                let hit_pos = player.render_center();
-                events.push(GameEvent::PlayerHit {
-                    x: hit_pos.x, y: hit_pos.y, z: hit_pos.z,
-                    r: player.color.r, g: player.color.g, b: player.color.b,
-                });
-            }
-        }
-        events.push(GameEvent::Explosion {
-            x: *ex, y: *ey, z: 0.0,
-            r: color.r, g: color.g, b: color.b,
-        });
-    }
-
-    bullets.extend(new_bullets);
     bullets.retain(|b| b.lifetime > 0.0);
-    (events, sticky_queue)
+    (events, sticky_queue, damage_queue)
 }

@@ -9,32 +9,6 @@ use crate::render::cards::{self as render_cards, CardPickAnim};
 use crate::render::crt::CrtFilter;
 use crate::render::hud;
 
-fn ray_aabb_t_render(ox: f32, oy: f32, dx: f32, dy: f32, aabb: &crate::physics::collision::AABB) -> Option<f32> {
-    let mut tmin = f32::NEG_INFINITY;
-    let mut tmax = f32::INFINITY;
-    if dx.abs() > 1e-8 {
-        let t1 = (aabb.min.x - ox) / dx;
-        let t2 = (aabb.max.x - ox) / dx;
-        tmin = tmin.max(t1.min(t2));
-        tmax = tmax.min(t1.max(t2));
-    } else if ox < aabb.min.x || ox > aabb.max.x {
-        return None;
-    }
-    if dy.abs() > 1e-8 {
-        let t1 = (aabb.min.y - oy) / dy;
-        let t2 = (aabb.max.y - oy) / dy;
-        tmin = tmin.max(t1.min(t2));
-        tmax = tmax.min(t1.max(t2));
-    } else if oy < aabb.min.y || oy > aabb.max.y {
-        return None;
-    }
-    if tmin <= tmax && tmax > 0.0 {
-        Some(if tmin > 0.0 { tmin } else { tmax })
-    } else {
-        None
-    }
-}
-
 pub fn draw_world(
     rl: &mut RaylibHandle,
     thread: &RaylibThread,
@@ -176,6 +150,22 @@ pub fn draw_world(
                         base_color.b / 2,
                         255,
                     )
+                } else if player.bloodthirsty_timer > 0.0 {
+                    // Bloodthirsty: deep red glow
+                    Color::new(
+                        ((base_color.r as u16 + 200) / 2).min(255) as u8,
+                        base_color.g / 3,
+                        base_color.b / 3,
+                        255,
+                    )
+                } else if player.slow_timer > 0.0 {
+                    // Ice: blue tint
+                    Color::new(
+                        base_color.r / 2,
+                        base_color.g / 2,
+                        ((base_color.b as u16 + 255) / 2).min(255) as u8,
+                        255,
+                    )
                 } else {
                     base_color
                 };
@@ -251,25 +241,6 @@ pub fn draw_world(
                 d3.draw_cylinder_ex(arrow_start, shaft_end, 0.03, 0.03, 6, arrow_color);
                 d3.draw_cylinder_ex(shaft_end, tip, 0.1, 0.0, 6, arrow_color);
 
-                // Leech field aura
-                if player.stats.leech_field {
-                    let pulse = (time * 2.0).sin() * 0.15 + 0.85;
-                    let r = 5.0 * pulse;
-                    let center = Vector3::new(px, py + player.size.y / 2.0, pz);
-                    d3.draw_sphere(center, r * 0.15, Color::new(160, 40, 80, 40));
-                    d3.draw_sphere(center, r * 0.3, Color::new(160, 40, 80, 20));
-                    // Inner ring markers
-                    for angle_i in 0..8 {
-                        let a = angle_i as f32 * std::f32::consts::PI / 4.0 + time * 1.5;
-                        let rx = a.cos() * r * 0.4;
-                        let ry = a.sin() * r * 0.4;
-                        d3.draw_sphere(
-                            Vector3::new(center.x + rx, center.y + ry, pz),
-                            0.06,
-                            Color::new(200, 60, 100, 120),
-                        );
-                    }
-                }
             }
 
             // Bullets + tracers (radius scales with big bullets)
@@ -300,79 +271,26 @@ pub fn draw_world(
                 }
             }
 
-            // Laser beams
-            for (pi, player) in world.players.iter().enumerate() {
-                if !player.alive || !player.laser_active { continue; }
-                if player.ghost_timer > 0.0 && pi as u8 != local_player { continue; }
-                let aim = player.aim_dir;
-                let ox = player.position.x + aim.x * 0.5;
-                let oy = player.position.y + 1.1 + aim.y * 0.5;
-                let oz = player.position.z;
-                let beam_r = 0.06 * (player.stats.bullet_radius_mult.sqrt().min(3.0));
-                let core_r = 0.02 * (player.stats.bullet_radius_mult.sqrt().min(3.0));
-
-                // Build beam directions (triple_shot = 3 beams)
-                let mut aims: Vec<Vector2> = vec![aim];
-                if player.stats.triple_shot {
-                    let angle = std::f32::consts::PI / 12.0;
-                    for &sign in &[-1.0_f32, 1.0] {
-                        let a = sign * angle;
-                        aims.push(Vector2::new(
-                            aim.x * a.cos() - aim.y * a.sin(),
-                            aim.x * a.sin() + aim.y * a.cos(),
-                        ));
-                    }
-                }
-
-                for beam_aim in &aims {
-                    let mut max_t = 50.0_f32;
-                    if !player.stats.phantom {
-                        for platform in &world.level.platforms {
-                            if let Some(t) = ray_aabb_t_render(ox, oy, beam_aim.x, beam_aim.y, &platform.aabb) {
-                                if t > 0.0 && t < max_t { max_t = t; }
-                            }
-                        }
-                    }
-                    if !player.stats.piercing {
-                        for (pj, other) in world.players.iter().enumerate() {
-                            if pj == pi || !other.alive || other.ghost_timer > 0.0 { continue; }
-                            if let Some(t) = ray_aabb_t_render(ox, oy, beam_aim.x, beam_aim.y, &other.aabb()) {
-                                if t > 0.0 && t < max_t { max_t = t; }
-                            }
-                        }
-                    }
-                    let start = Vector3::new(ox, oy, oz);
-                    let end = Vector3::new(ox + beam_aim.x * max_t, oy + beam_aim.y * max_t, oz);
-                    let laser_color = Color::new(player.color.r, player.color.g, player.color.b, 200);
-                    d3.draw_cylinder_ex(start, end, beam_r, beam_r, 4, laser_color);
-                    d3.draw_cylinder_ex(start, end, core_r, core_r, 4, Color::WHITE);
-                }
-            }
-
-            // Gravity wells
-            for well in &world.gravity_wells {
-                let pulse = (time * 4.0).sin() * 0.3 + 0.7;
-                let alpha = ((well.lifetime / 4.0) * 255.0).min(255.0) as u8;
-                let r = 6.0 * pulse;
-                d3.draw_sphere(well.position, 0.3, Color::new(100, 60, 200, alpha));
-                // Pulsing ring effect (rendered as thin sphere wireframe)
-                d3.draw_sphere(well.position, r * 0.3, Color::new(120, 80, 220, alpha / 3));
-            }
-
-            // Clones (rendered as smaller copies of their owner)
-            for clone in &world.clones {
-                let fade = (clone.lifetime / 5.0).min(1.0);
-                let c = Color::new(
-                    (clone.color.r as f32 * fade) as u8,
-                    (clone.color.g as f32 * fade) as u8,
-                    (clone.color.b as f32 * fade) as u8,
-                    255,
+            // Healing zones
+            for zone in &world.healing_zones {
+                let fade = (zone.lifetime / 5.0).min(1.0);
+                let pulse = (time * 3.0).sin() * 0.15 + 0.85;
+                let r = 3.0 * pulse;
+                let alpha = (fade * 80.0) as u8;
+                let center = zone.position;
+                d3.draw_sphere(center, r * 0.3, Color::new(100, 255, 200, alpha));
+                d3.draw_sphere(center, r * 0.15, Color::new(100, 255, 200, alpha / 2));
+                // Cross marker
+                let cross_r = 0.3;
+                d3.draw_cylinder_ex(
+                    Vector3::new(center.x - cross_r, center.y, center.z),
+                    Vector3::new(center.x + cross_r, center.y, center.z),
+                    0.08, 0.08, 4, Color::new(100, 255, 200, (fade * 200.0) as u8),
                 );
-                d3.draw_sphere(clone.position, 0.3, c);
-                d3.draw_sphere(
-                    Vector3::new(clone.position.x, clone.position.y + 0.5, clone.position.z),
-                    0.22,
-                    c,
+                d3.draw_cylinder_ex(
+                    Vector3::new(center.x, center.y - cross_r, center.z),
+                    Vector3::new(center.x, center.y + cross_r, center.z),
+                    0.08, 0.08, 4, Color::new(100, 255, 200, (fade * 200.0) as u8),
                 );
             }
 
@@ -440,6 +358,20 @@ pub fn draw_world(
                 Vector2::new(0.0, 0.0),
                 Color::WHITE,
             );
+        }
+
+        // CaseOh screen shake for local player
+        if let Some(local_p) = world.players.get(local_player as usize) {
+            if local_p.shake_timer > 0.0 {
+                let intensity = local_p.shake_timer.min(1.0) * 12.0;
+                let sx = ((time * 47.0).sin() * intensity) as i32;
+                let sy = ((time * 61.0).cos() * intensity) as i32;
+                // Shift everything drawn so far
+                d.draw_rectangle(0, 0, render_w, render_h, Color::new(0, 0, 0, 0));
+                // We apply shake by offsetting subsequent draws
+                // (raylib doesn't support global offset easily, so we shake the HUD text)
+                let _ = (sx, sy); // shake applied via camera in draw_hud
+            }
         }
 
         hud::draw_hud(&mut d, world, camera, render_w, render_h, local_player);

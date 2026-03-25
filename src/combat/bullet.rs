@@ -24,13 +24,11 @@ pub struct Bullet {
     pub bounces_remaining: i32,
     pub homing: bool,
     pub piercing: bool,
-    pub explosive: bool,
     pub poison: bool,
     pub gravity_mult: f32,
-    pub phantom: bool,
-    pub split_on_hit: bool,
-    pub hot_potato: bool,
     pub sticky: bool,
+    pub ice: bool,
+    pub void_pull: bool,
 }
 
 impl Bullet {
@@ -48,13 +46,11 @@ impl Bullet {
             bounces_remaining: 0,
             homing: false,
             piercing: false,
-            explosive: false,
             poison: false,
             gravity_mult: 1.0,
-            phantom: false,
-            split_on_hit: false,
-            hot_potato: false,
             sticky: false,
+            ice: false,
+            void_pull: false,
         }
     }
 
@@ -67,7 +63,7 @@ impl Bullet {
         stats: &PlayerStats,
     ) -> Self {
         let speed = BULLET_SPEED * stats.bullet_speed_mult;
-        let damage = BULLET_DAMAGE * stats.bullet_damage_mult;
+        let damage = BULLET_DAMAGE * stats.bullet_damage_mult + stats.bullet_damage_flat;
         Self {
             position,
             prev_position: position,
@@ -80,13 +76,11 @@ impl Bullet {
             bounces_remaining: stats.rubber_bounces,
             homing: stats.homing,
             piercing: stats.piercing,
-            explosive: stats.explosive,
             poison: stats.poison,
             gravity_mult: stats.bullet_gravity_mult,
-            phantom: stats.phantom,
-            split_on_hit: stats.split_shot,
-            hot_potato: stats.hot_potato,
             sticky: stats.sticky,
+            ice: stats.ice_shots,
+            void_pull: stats.void_shots,
         }
     }
 

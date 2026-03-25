@@ -33,12 +33,15 @@ pub struct PlayerSnapshot {
     pub cursor_x: f32,
     pub cursor_y: f32,
     pub cards: Vec<(u8, f32)>,
-    pub laser_active: bool,
     pub poison_timer: f32,
     pub ghost_timer: f32,
     pub overclock_timer: f32,
     pub overclock_crash_timer: f32,
     pub adrenaline_timer: f32,
+    pub bloodthirsty_timer: f32,
+    pub slow_timer: f32,
+    pub shake_timer: f32,
+    pub soul_siphon_bonus_hp: f32,
     pub upsized_stacks: i32,
 }
 
@@ -58,30 +61,20 @@ pub struct BulletSnapshot {
 }
 
 #[derive(Debug, Clone)]
-pub struct GravityWellSnapshot {
-    pub x: f32,
-    pub y: f32,
-    pub owner: u8,
-    pub lifetime: f32,
-}
-
-#[derive(Debug, Clone)]
-pub struct CloneSnapshot {
-    pub x: f32,
-    pub y: f32,
-    pub vel_x: f32,
-    pub vel_y: f32,
-    pub owner: u8,
-    pub lifetime: f32,
-}
-
-#[derive(Debug, Clone)]
 pub struct StickyBombSnapshot {
     pub x: f32,
     pub y: f32,
     pub owner: u8,
     pub fuse: f32,
     pub stuck_to: u8,
+}
+
+#[derive(Debug, Clone)]
+pub struct HealingZoneSnapshot {
+    pub x: f32,
+    pub y: f32,
+    pub owner: u8,
+    pub lifetime: f32,
 }
 
 #[derive(Debug, Clone)]
@@ -108,9 +101,8 @@ pub struct WorldSnapshot {
     pub match_winner: u8,
     pub match_timer: f32,
     // Entity snapshots
-    pub gravity_wells: Vec<GravityWellSnapshot>,
-    pub clones: Vec<CloneSnapshot>,
     pub sticky_bombs: Vec<StickyBombSnapshot>,
+    pub healing_zones: Vec<HealingZoneSnapshot>,
 }
 
 // ── Encode/decode GameInput ──────────────────────────────────────────────────
@@ -227,12 +219,15 @@ pub fn encode_snapshot(snap: &WorldSnapshot) -> Vec<u8> {
             payload.push(*card_id);
             push_f32(&mut payload, *cooldown);
         }
-        payload.push(p.laser_active as u8);
         push_f32(&mut payload, p.poison_timer);
         push_f32(&mut payload, p.ghost_timer);
         push_f32(&mut payload, p.overclock_timer);
         push_f32(&mut payload, p.overclock_crash_timer);
         push_f32(&mut payload, p.adrenaline_timer);
+        push_f32(&mut payload, p.bloodthirsty_timer);
+        push_f32(&mut payload, p.slow_timer);
+        push_f32(&mut payload, p.shake_timer);
+        push_f32(&mut payload, p.soul_siphon_bonus_hp);
         push_i32(&mut payload, p.upsized_stacks);
     }
 
@@ -315,22 +310,6 @@ pub fn encode_snapshot(snap: &WorldSnapshot) -> Vec<u8> {
     push_f32(&mut payload, snap.match_timer);
 
     // Entity snapshots
-    payload.push(snap.gravity_wells.len() as u8);
-    for w in &snap.gravity_wells {
-        push_f32(&mut payload, w.x);
-        push_f32(&mut payload, w.y);
-        payload.push(w.owner);
-        push_f32(&mut payload, w.lifetime);
-    }
-    payload.push(snap.clones.len() as u8);
-    for c in &snap.clones {
-        push_f32(&mut payload, c.x);
-        push_f32(&mut payload, c.y);
-        push_f32(&mut payload, c.vel_x);
-        push_f32(&mut payload, c.vel_y);
-        payload.push(c.owner);
-        push_f32(&mut payload, c.lifetime);
-    }
     payload.push(snap.sticky_bombs.len() as u8);
     for s in &snap.sticky_bombs {
         push_f32(&mut payload, s.x);
@@ -338,6 +317,13 @@ pub fn encode_snapshot(snap: &WorldSnapshot) -> Vec<u8> {
         payload.push(s.owner);
         push_f32(&mut payload, s.fuse);
         payload.push(s.stuck_to);
+    }
+    payload.push(snap.healing_zones.len() as u8);
+    for h in &snap.healing_zones {
+        push_f32(&mut payload, h.x);
+        push_f32(&mut payload, h.y);
+        payload.push(h.owner);
+        push_f32(&mut payload, h.lifetime);
     }
 
     let len = payload.len() as u16;
@@ -385,12 +371,15 @@ pub fn decode_snapshot(data: &[u8]) -> Option<WorldSnapshot> {
             let cooldown = read_f32(data, &mut pos);
             cards.push((card_id, cooldown));
         }
-        let ps_laser = if pos < data.len() { read_u8(data, &mut pos) != 0 } else { false };
         let ps_poison = if pos + 4 <= data.len() { read_f32(data, &mut pos) } else { 0.0 };
         let ps_ghost = if pos + 4 <= data.len() { read_f32(data, &mut pos) } else { 0.0 };
         let ps_overclock = if pos + 4 <= data.len() { read_f32(data, &mut pos) } else { 0.0 };
         let ps_overclock_crash = if pos + 4 <= data.len() { read_f32(data, &mut pos) } else { 0.0 };
         let ps_adrenaline = if pos + 4 <= data.len() { read_f32(data, &mut pos) } else { 0.0 };
+        let ps_bloodthirsty = if pos + 4 <= data.len() { read_f32(data, &mut pos) } else { 0.0 };
+        let ps_slow = if pos + 4 <= data.len() { read_f32(data, &mut pos) } else { 0.0 };
+        let ps_shake = if pos + 4 <= data.len() { read_f32(data, &mut pos) } else { 0.0 };
+        let ps_soul_siphon = if pos + 4 <= data.len() { read_f32(data, &mut pos) } else { 0.0 };
         let ps_upsized = if pos + 4 <= data.len() { read_i32(data, &mut pos) } else { 0 };
         players.push(PlayerSnapshot {
             pos_x: ps_pos_x, pos_y: ps_pos_y,
@@ -401,12 +390,15 @@ pub fn decode_snapshot(data: &[u8]) -> Option<WorldSnapshot> {
             bullets_remaining: ps_bullets_remaining, alive: ps_alive,
             cursor_x: ps_cursor_x, cursor_y: ps_cursor_y,
             cards,
-            laser_active: ps_laser,
             poison_timer: ps_poison,
             ghost_timer: ps_ghost,
             overclock_timer: ps_overclock,
             overclock_crash_timer: ps_overclock_crash,
             adrenaline_timer: ps_adrenaline,
+            bloodthirsty_timer: ps_bloodthirsty,
+            slow_timer: ps_slow,
+            shake_timer: ps_shake,
+            soul_siphon_bonus_hp: ps_soul_siphon,
             upsized_stacks: ps_upsized,
         });
     }
@@ -503,34 +495,6 @@ pub fn decode_snapshot(data: &[u8]) -> Option<WorldSnapshot> {
     };
 
     // Entity snapshots
-    let mut gravity_wells = Vec::new();
-    if pos < data.len() {
-        let count = read_u8(data, &mut pos);
-        for _ in 0..count {
-            if pos + 13 > data.len() { break; }
-            gravity_wells.push(GravityWellSnapshot {
-                x: read_f32(data, &mut pos),
-                y: read_f32(data, &mut pos),
-                owner: read_u8(data, &mut pos),
-                lifetime: read_f32(data, &mut pos),
-            });
-        }
-    }
-    let mut clones = Vec::new();
-    if pos < data.len() {
-        let count = read_u8(data, &mut pos);
-        for _ in 0..count {
-            if pos + 21 > data.len() { break; }
-            clones.push(CloneSnapshot {
-                x: read_f32(data, &mut pos),
-                y: read_f32(data, &mut pos),
-                vel_x: read_f32(data, &mut pos),
-                vel_y: read_f32(data, &mut pos),
-                owner: read_u8(data, &mut pos),
-                lifetime: read_f32(data, &mut pos),
-            });
-        }
-    }
     let mut sticky_bombs = Vec::new();
     if pos < data.len() {
         let count = read_u8(data, &mut pos);
@@ -542,6 +506,19 @@ pub fn decode_snapshot(data: &[u8]) -> Option<WorldSnapshot> {
                 owner: read_u8(data, &mut pos),
                 fuse: read_f32(data, &mut pos),
                 stuck_to: read_u8(data, &mut pos),
+            });
+        }
+    }
+    let mut healing_zones = Vec::new();
+    if pos < data.len() {
+        let count = read_u8(data, &mut pos);
+        for _ in 0..count {
+            if pos + 13 > data.len() { break; }
+            healing_zones.push(HealingZoneSnapshot {
+                x: read_f32(data, &mut pos),
+                y: read_f32(data, &mut pos),
+                owner: read_u8(data, &mut pos),
+                lifetime: read_f32(data, &mut pos),
             });
         }
     }
@@ -566,9 +543,8 @@ pub fn decode_snapshot(data: &[u8]) -> Option<WorldSnapshot> {
         card_hover,
         match_winner,
         match_timer,
-        gravity_wells,
-        clones,
         sticky_bombs,
+        healing_zones,
     })
 }
 

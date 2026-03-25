@@ -25,13 +25,16 @@ pub struct Player {
     pub alive: bool,
     pub cards: Vec<(CardId, f32)>, // (card, cooldown) — abilities use cooldown, powerups store 0.0
     pub stats: PlayerStats,        // computed from held powerup cards
-    pub stomp_active: bool,
-    pub laser_active: bool,
     pub poison_timer: f32,
     pub ghost_timer: f32,
     pub overclock_timer: f32,
     pub overclock_crash_timer: f32,
     pub adrenaline_timer: f32,
+    pub bloodthirsty_timer: f32,
+    pub slow_timer: f32,           // ice shots: -50% speed for 2s
+    pub shake_timer: f32,          // CaseOh: screen shake duration
+    pub soul_siphon_bonus_hp: f32, // permanent max HP from kills
+    pub doppelganger_timer: f32,   // cooldown between doppelganger auto-shots
     pub upsized_stacks: i32,
     pub rewind_history: Vec<(f32, f32, f32)>, // (x, y, hp) snapshots for Rewind
     pub rewind_sample_timer: f32,
@@ -60,13 +63,16 @@ impl Player {
             alive: true,
             cards: Vec::new(),
             stats: PlayerStats::default(),
-            stomp_active: false,
-            laser_active: false,
             poison_timer: 0.0,
             ghost_timer: 0.0,
             overclock_timer: 0.0,
             overclock_crash_timer: 0.0,
             adrenaline_timer: 0.0,
+            bloodthirsty_timer: 0.0,
+            slow_timer: 0.0,
+            shake_timer: 0.0,
+            soul_siphon_bonus_hp: 0.0,
+            doppelganger_timer: 0.0,
             upsized_stacks: 0,
             rewind_history: Vec::new(),
             rewind_sample_timer: 0.0,
