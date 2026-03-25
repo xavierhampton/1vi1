@@ -9,7 +9,7 @@ use crate::combat::particles::{spawn_from_events, update_particles};
 use crate::game::net::{self, GameEvent, WorldSnapshot};
 use crate::game::state::GameState;
 use crate::game::world::World;
-use crate::lobby::protocol::ClientIncoming;
+use crate::lobby::protocol::{self, ClientIncoming};
 use crate::lobby::server::{GameServerParts, ServerEvent};
 use crate::player::input::{self, PlayerInput};
 use crate::render::cards::card_slot_from_mouse;
@@ -19,6 +19,7 @@ const BROADCAST_RATE: f32 = 1.0 / 60.0;
 pub struct GameServer {
     pub world: World,
     pub dev_mode: bool,
+    pub player_left: Option<String>,
     client_streams: Vec<Option<TcpStream>>,
     event_rx: Receiver<ServerEvent>,
     shutdown: Arc<AtomicBool>,
@@ -49,6 +50,7 @@ impl GameServer {
         Self {
             world,
             dev_mode: false,
+            player_left: None,
             client_streams: parts.client_streams,
             event_rx: parts.event_rx,
             shutdown: parts.shutdown,
@@ -120,8 +122,14 @@ impl GameServer {
                         }
                     }
                 }
-                ServerEvent::ClientDisconnected(_cid) => {
-                    // Player disconnected — could handle later
+                ServerEvent::ClientDisconnected(cid) => {
+                    let name = self.client_slot_map.get(cid)
+                        .and_then(|s| *s)
+                        .and_then(|slot| self.world.players.get(slot))
+                        .map(|p| p.name.clone())
+                        .unwrap_or_else(|| "A player".to_string());
+                    self.broadcast_player_left(&name);
+                    self.player_left = Some(name);
                 }
                 ServerEvent::ClientConnected(_, _) => {
                     // Ignore new connections during game
@@ -193,6 +201,20 @@ impl GameServer {
 
         // 5. Update particles locally on the host (for rendering)
         update_particles(&mut self.world.particles, dt);
+    }
+
+    pub fn notify_leaving(&mut self, name: &str) {
+        self.broadcast_player_left(name);
+    }
+
+    fn broadcast_player_left(&mut self, name: &str) {
+        let msg = protocol::ServerMsg::PlayerLeft { name: name.to_string() };
+        let data = protocol::encode_server(&msg);
+        for stream_opt in self.client_streams.iter_mut() {
+            if let Some(stream) = stream_opt {
+                let _ = stream.write_all(&data);
+            }
+        }
     }
 
     fn broadcast_snapshot(&mut self, snapshot: &WorldSnapshot) {

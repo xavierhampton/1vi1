@@ -219,6 +219,16 @@ impl LobbyServer {
         }
     }
 
+    pub fn disband(&mut self) {
+        let host_name = self.state.slots[0].name.clone();
+        let data = protocol::encode_server(&protocol::ServerMsg::Disbanded { host_name });
+        for stream_opt in self.client_streams.iter_mut() {
+            if let Some(stream) = stream_opt {
+                let _ = stream.write_all(&data);
+            }
+        }
+    }
+
     pub fn host_change_color(&mut self, color: LobbyColor) {
         if !self.state.color_taken(color, Some(0)) {
             self.state.slots[0].color = color;

@@ -9,6 +9,7 @@ mod render;
 
 use game::client::GameClient;
 use game::server::GameServer;
+use game::state::GameState;
 use game::world::World;
 use lobby::client::LobbyClient;
 use lobby::screen::{draw_lobby, lobby_input, LobbyInput};
@@ -140,6 +141,7 @@ fn main() {
                                 server.host_toggle_ready();
                             }
                             LobbyInput::Leave => {
+                                server.disband();
                                 next_state = Some(AppState::Menu);
                             }
                             LobbyInput::CopyIP => {
@@ -219,6 +221,15 @@ fn main() {
                             LobbyInput::None => {}
                         }
 
+                        if let Some(ref host_name) = client.host_disbanded {
+                            if host_name.is_empty() {
+                                menu.show_error("Host disconnected");
+                            } else {
+                                menu.show_error(&format!("HOST {} disbanded the Lobby", host_name));
+                            }
+                            next_state = Some(AppState::Menu);
+                        }
+
                         if client.rejected {
                             menu.show_error("Lobby is full");
                             next_state = Some(AppState::Menu);
@@ -256,7 +267,19 @@ fn main() {
                 if rl.is_key_pressed(KeyboardKey::KEY_ESCAPE) {
                     if dev_overlay_open {
                         dev_overlay_open = false;
+                    } else if matches!(game_server.world.state, GameState::MatchOver { .. }) {
+                        // Return to lobby after match
+                        let name = if menu.player_name.is_empty() { "Player" } else { &menu.player_name };
+                        if let Ok(mut server) = LobbyServer::start(name, DEFAULT_PORT) {
+                            server.dev_mode = menu.dev_mode;
+                            lobby_time = 0.0;
+                            next_state = Some(AppState::Lobby(LobbyRole::Host(server)));
+                        } else {
+                            next_state = Some(AppState::Menu);
+                        }
                     } else {
+                        let name = game_server.world.players[0].name.clone();
+                        game_server.notify_leaving(&name);
                         next_state = Some(AppState::Menu);
                     }
                 } else {
@@ -278,6 +301,12 @@ fn main() {
                     if !dev_overlay_open {
                         game_server.update(&rl, &camera, dt);
                     }
+
+                    if let Some(ref left_name) = game_server.player_left {
+                        menu.show_error(&format!("{} Left", left_name));
+                        next_state = Some(AppState::Menu);
+                    }
+
                     card_anim.update(&game_server.world, dt);
                     let theme = menu.theme();
                     render::game::draw_world(
@@ -288,7 +317,10 @@ fn main() {
                 }
             }
             AppState::InGameClient(game_client) => {
-                if rl.is_key_pressed(KeyboardKey::KEY_ESCAPE) {
+                if let Some(ref msg) = game_client.disconnect_message {
+                    menu.show_error(msg);
+                    next_state = Some(AppState::Menu);
+                } else if rl.is_key_pressed(KeyboardKey::KEY_ESCAPE) {
                     next_state = Some(AppState::Menu);
                 } else {
                     game_time += dt;

@@ -27,6 +27,18 @@ pub fn level_by_id(id: u8) -> Level {
     }
 }
 
+pub fn level_name(id: u8) -> &'static str {
+    match id {
+        0 => "Classic",
+        1 => "Towers",
+        2 => "Pit",
+        3 => "Scaffold",
+        4 => "Bunkers",
+        5 => "Bridges",
+        _ => "Unknown",
+    }
+}
+
 // ── Map 0: Classic ──────────────────────────────────────────────────────────
 // Symmetric with two mid platforms and a high center platform.
 fn classic() -> Level {

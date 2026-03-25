@@ -11,12 +11,13 @@ use crate::game::net;
 use crate::game::state::GameState;
 use crate::game::world::World;
 use crate::lobby::client::GameClientParts;
-use crate::lobby::protocol::{self, ServerIncoming};
+use crate::lobby::protocol::{self, ServerIncoming, ServerMsg};
 use crate::player::input;
 use crate::render::cards::card_slot_from_mouse;
 
 pub struct GameClient {
     pub world: World,
+    pub disconnect_message: Option<String>,
     write_stream: TcpStream,
     incoming_rx: Receiver<ServerIncoming>,
     shutdown: Arc<AtomicBool>,
@@ -42,6 +43,7 @@ impl GameClient {
             .collect();
         Self {
             world,
+            disconnect_message: None,
             write_stream: parts.write_stream,
             incoming_rx: parts.incoming_rx,
             shutdown: parts.shutdown,
@@ -97,8 +99,19 @@ impl GameClient {
         let mut got_snapshot = false;
         let mut latest_snapshot = None;
         for incoming in self.incoming_rx.try_iter() {
-            if let ServerIncoming::Snapshot(snap) = incoming {
-                latest_snapshot = Some(snap);
+            match incoming {
+                ServerIncoming::Snapshot(snap) => {
+                    latest_snapshot = Some(snap);
+                }
+                ServerIncoming::Lobby(ServerMsg::PlayerLeft { name }) => {
+                    self.disconnect_message = Some(format!("{} Left", name));
+                }
+                ServerIncoming::Disconnected => {
+                    if self.disconnect_message.is_none() {
+                        self.disconnect_message = Some("Host disconnected".to_string());
+                    }
+                }
+                _ => {}
             }
         }
 

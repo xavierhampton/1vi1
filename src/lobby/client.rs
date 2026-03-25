@@ -13,6 +13,7 @@ pub struct LobbyClient {
     pub my_index: u8,
     pub rejected: bool,
     pub game_starting: bool,
+    pub host_disbanded: Option<String>,
     pub(crate) write_stream: Option<TcpStream>,
     pub(crate) incoming_rx: Option<Receiver<ServerIncoming>>,
     pub(crate) shutdown: Arc<AtomicBool>,
@@ -41,6 +42,7 @@ impl LobbyClient {
             my_index: 0,
             rejected: false,
             game_starting: false,
+            host_disbanded: None,
             write_stream: Some(write_stream),
             incoming_rx: Some(rx),
             shutdown,
@@ -71,8 +73,17 @@ impl LobbyClient {
                     ServerMsg::GameStart => {
                         self.game_starting = true;
                     }
+                    ServerMsg::Disbanded { host_name } => {
+                        self.host_disbanded = Some(host_name);
+                    }
+                    ServerMsg::PlayerLeft { .. } => {}
                 },
                 ServerIncoming::Snapshot(_) => {} // ignore during lobby
+                ServerIncoming::Disconnected => {
+                    if self.host_disbanded.is_none() {
+                        self.host_disbanded = Some(String::new());
+                    }
+                }
             }
         }
     }
@@ -150,5 +161,8 @@ fn read_server(
             }
             Err(_) => break,
         }
+    }
+    if !shutdown.load(Ordering::Relaxed) {
+        let _ = tx.send(ServerIncoming::Disconnected);
     }
 }

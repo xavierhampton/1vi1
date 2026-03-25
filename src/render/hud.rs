@@ -3,6 +3,7 @@ use raylib::prelude::*;
 use crate::game::cards::CARD_CATALOG;
 use crate::game::state::GameState;
 use crate::game::world::{World, COUNTDOWN_DURATION, MAX_BULLETS, RELOAD_TIME, WINS_TO_MATCH};
+use crate::level::level::level_name;
 
 pub fn draw_hud(
     d: &mut RaylibDrawHandle, world: &World, camera: Camera3D,
@@ -193,6 +194,16 @@ pub fn draw_hud(
         }
     }
 
+    // ── Map name (top right, above score pips) ──────────────────────────
+    {
+        let map_label = format!("[{}]", level_name(world.level.id));
+        let font_size = 16;
+        let tw = d.measure_text(&map_label, font_size);
+        let margin_r = 16;
+        d.draw_text(&map_label, render_w - margin_r - tw, 12, font_size,
+            Color::new(180, 180, 180, 160));
+    }
+
     // ── Score pips (top right) — squares with thick outlines ───────────
     {
         let wins_needed = WINS_TO_MATCH;
@@ -200,7 +211,7 @@ pub fn draw_hud(
         let pip_gap: i32 = 6;
         let row_gap: i32 = 22;
         let margin_r: i32 = 16;
-        let margin_t: i32 = 12;
+        let margin_t: i32 = 32;
         let border: f32 = 2.0;
         let row_w = wins_needed * (pip_size + pip_gap) - pip_gap;
 

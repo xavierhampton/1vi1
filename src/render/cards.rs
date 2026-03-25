@@ -324,36 +324,58 @@ pub fn draw_match_over(
         d.draw_text(
             &text,
             screen_w / 2 - text_w / 2,
-            screen_h / 2 - font_size - 20,
+            screen_h / 2 - font_size - 40,
             font_size,
             color,
         );
 
-        // Final scores
-        let score_font = 28;
-        let mut score_parts: Vec<String> = Vec::new();
+        // Per-player scoreboard
+        let name_font = 26;
+        let score_font = 26;
+        let row_h = 36;
+        let board_y = screen_h / 2 + 10;
         for (i, player) in world.players.iter().enumerate() {
-            score_parts.push(format!("{}: {}", player.name, world.scores[i]));
+            let score = world.scores.get(i).copied().unwrap_or(0);
+            let row_y = board_y + i as i32 * row_h;
+            let is_winner = i == *winner_index as usize;
+
+            let score_str = format!("{}", score);
+            let name_w = d.measure_text(&player.name, name_font);
+            let score_w = d.measure_text(&score_str, score_font);
+            let gap = 16;
+            let total_w = name_w + gap + score_w;
+            let start_x = screen_w / 2 - total_w / 2;
+
+            let name_alpha = if is_winner { 255 } else { 200 };
+            d.draw_text(
+                &player.name, start_x, row_y, name_font,
+                Color::new(player.color.r, player.color.g, player.color.b, name_alpha),
+            );
+            d.draw_text(
+                &score_str, start_x + name_w + gap, row_y, score_font,
+                Color::new(220, 220, 220, if is_winner { 255 } else { 160 }),
+            );
+
+            // Underline the winner row
+            if is_winner {
+                d.draw_rectangle(
+                    start_x, row_y + name_font + 2,
+                    total_w, 2,
+                    Color::new(player.color.r, player.color.g, player.color.b, 120),
+                );
+            }
         }
-        let score_text = score_parts.join("    ");
-        let score_w = d.measure_text(&score_text, score_font);
-        d.draw_text(
-            &score_text,
-            screen_w / 2 - score_w / 2,
-            screen_h / 2 + 30,
-            score_font,
-            Color::new(200, 200, 200, 220),
-        );
 
         // "Press ESC" hint
+        let hint_y = board_y + world.players.len() as i32 * row_h + 20;
         if *timer <= 2.0 {
-            let hint = "Press ESC to return to menu";
+            let hint = "Press ESC to return to lobby";
             let hint_size = 20;
             let hint_w = d.measure_text(hint, hint_size);
             d.draw_text(
                 hint,
                 screen_w / 2 - hint_w / 2,
-                screen_h / 2 + 80,
+                hint_y,
                 hint_size,
                 Color::new(150, 150, 150, 180),
             );

@@ -17,6 +17,8 @@ pub enum ServerMsg {
     LobbySnapshot { my_index: u8, state: LobbyState },
     Rejected { reason: u8 },
     GameStart,
+    PlayerLeft { name: String },
+    Disbanded { host_name: String },
 }
 
 // Wrapper enums: reader threads decode both lobby and game messages
@@ -31,6 +33,7 @@ pub enum ClientIncoming {
 pub enum ServerIncoming {
     Lobby(ServerMsg),
     Snapshot(WorldSnapshot),
+    Disconnected,
 }
 
 // Rejection reasons
@@ -87,6 +90,18 @@ pub fn encode_server(msg: &ServerMsg) -> Vec<u8> {
         }
         ServerMsg::GameStart => {
             payload.push(0x83);
+        }
+        ServerMsg::PlayerLeft { name } => {
+            payload.push(0x84);
+            let bytes = name.as_bytes();
+            payload.push(bytes.len() as u8);
+            payload.extend_from_slice(bytes);
+        }
+        ServerMsg::Disbanded { host_name } => {
+            payload.push(0x85);
+            let bytes = host_name.as_bytes();
+            payload.push(bytes.len() as u8);
+            payload.extend_from_slice(bytes);
         }
     }
     let len = payload.len() as u16;
@@ -166,6 +181,18 @@ pub fn decode_server_incoming(buf: &[u8]) -> Option<(ServerIncoming, usize)> {
         }
         0x82 => ServerIncoming::Lobby(ServerMsg::Rejected { reason: data[1] }),
         0x83 => ServerIncoming::Lobby(ServerMsg::GameStart),
+        0x84 => {
+            let name_len = data[1] as usize;
+            if data.len() < 2 + name_len { return None; }
+            let name = String::from_utf8_lossy(&data[2..2 + name_len]).to_string();
+            ServerIncoming::Lobby(ServerMsg::PlayerLeft { name })
+        }
+        0x85 => {
+            let name_len = data[1] as usize;
+            if data.len() < 2 + name_len { return None; }
+            let name = String::from_utf8_lossy(&data[2..2 + name_len]).to_string();
+            ServerIncoming::Lobby(ServerMsg::Disbanded { host_name: name })
+        }
         // Game message
         0x90 => {
             let snap = net::decode_snapshot(&data[1..])?;
