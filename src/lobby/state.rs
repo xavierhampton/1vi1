@@ -1,5 +1,30 @@
 use raylib::prelude::*;
 
+#[derive(Clone, Debug)]
+pub struct GameSettings {
+    pub wins_to_match: i32,
+    pub spawn_invuln: f32,
+    pub starting_hp: f32,
+    pub gravity_scale: f32,
+    pub turbo_speed: f32,     // 1.0 = normal
+    pub sudden_death: bool,
+    pub everyone_picks: bool, // false = loser only, true = everyone
+}
+
+impl Default for GameSettings {
+    fn default() -> Self {
+        Self {
+            wins_to_match: 3,
+            spawn_invuln: 2.5,
+            starting_hp: 100.0,
+            gravity_scale: 1.0,
+            turbo_speed: 1.0,
+            sudden_death: false,
+            everyone_picks: false,
+        }
+    }
+}
+
 pub const LOBBY_COLORS: [(Color, &str); 4] = [
     (Color::new(80, 180, 255, 255), "Blue"),
     (Color::new(255, 100, 80, 255), "Red"),
@@ -54,6 +79,7 @@ pub struct PlayerSlot {
 #[derive(Clone, Debug)]
 pub struct LobbyState {
     pub slots: Vec<PlayerSlot>,
+    pub settings: GameSettings,
 }
 
 impl LobbyState {
@@ -65,6 +91,7 @@ impl LobbyState {
                 ready: false,
                 is_host: true,
             }],
+            settings: GameSettings::default(),
         }
     }
 

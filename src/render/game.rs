@@ -23,6 +23,24 @@ pub fn draw_world(
     local_player: u8,
     dev_overlay: bool,
 ) {
+    // Compute screen shake offset from local player
+    let (shake_x, shake_y) = if let Some(local_p) = world.players.get(local_player as usize) {
+        if local_p.shake_timer > 0.0 {
+            let intensity = local_p.shake_timer.min(0.4) * 4.0;
+            (
+                (time * 47.0).sin() * intensity,
+                (time * 61.0).cos() * intensity,
+            )
+        } else { (0.0, 0.0) }
+    } else { (0.0, 0.0) };
+
+    // Apply shake to camera
+    let mut camera = camera;
+    camera.position.x += shake_x * 0.05;
+    camera.position.y += shake_y * 0.05;
+    camera.target.x += shake_x * 0.05;
+    camera.target.y += shake_y * 0.05;
+
     // Draw environment to render texture (CRT + aberration)
     {
         let mut d = rl.begin_texture_mode(thread, &mut crt.env_target);
@@ -170,6 +188,20 @@ pub fn draw_world(
                     base_color
                 };
 
+                // Spawn invulnerability: gentle pulse between normal and slightly washed out
+                let render_color = if player.invuln_timer > 0.0 {
+                    let pulse = (player.invuln_timer * 3.5).sin() * 0.5 + 0.5;
+                    let white_mix = 0.05 + pulse * 0.1; // 0.05..0.15 — very subtle
+                    Color::new(
+                        (render_color.r as f32 + (255.0 - render_color.r as f32) * white_mix) as u8,
+                        (render_color.g as f32 + (255.0 - render_color.g as f32) * white_mix) as u8,
+                        (render_color.b as f32 + (255.0 - render_color.b as f32) * white_mix) as u8,
+                        (230.0 - pulse * 20.0) as u8, // 210..230 alpha
+                    )
+                } else {
+                    render_color
+                };
+
                 let size_scale = player.size.x / 0.6;
                 let body_r = 0.38 * size_scale;
                 let head_r = 0.28 * size_scale;
@@ -241,6 +273,40 @@ pub fn draw_world(
                 d3.draw_cylinder_ex(arrow_start, shaft_end, 0.03, 0.03, 6, arrow_color);
                 d3.draw_cylinder_ex(shaft_end, tip, 0.1, 0.0, 6, arrow_color);
 
+            }
+
+            // DoppelGanger ghosts (semi-transparent delayed copies)
+            for player in &world.players {
+                if !player.alive || !player.stats.doppelganger { continue; }
+                let (gx, gy, gax, gay) = player.doppel_ghost;
+                if gx == 0.0 && gy == 0.0 { continue; }
+                let gz = player.position.z;
+                let ghost_color = Color::new(
+                    player.color.r / 2 + 60,
+                    player.color.g / 2 + 60,
+                    player.color.b / 2 + 60,
+                    120,
+                );
+                let size_scale = player.size.x / 0.6;
+                let body_r = 0.38 * size_scale;
+                let head_r = 0.28 * size_scale;
+                let g_body = Vector3::new(gx, gy + 0.5 * size_scale, gz);
+                let g_head = Vector3::new(gx, gy + 1.15 * size_scale, gz);
+                d3.draw_sphere(g_body, body_r, ghost_color);
+                d3.draw_sphere(g_head, head_r, ghost_color);
+
+                // Ghost aim arrow
+                let g_arrow_start = Vector3::new(
+                    g_head.x + gax * (head_r + 0.05),
+                    g_head.y + gay * (head_r + 0.05),
+                    gz,
+                );
+                let g_tip = Vector3::new(
+                    g_arrow_start.x + gax * 0.9,
+                    g_arrow_start.y + gay * 0.9,
+                    gz,
+                );
+                d3.draw_cylinder_ex(g_arrow_start, g_tip, 0.03, 0.0, 6, ghost_color);
             }
 
             // Bullets + tracers (radius scales with big bullets)
@@ -360,19 +426,7 @@ pub fn draw_world(
             );
         }
 
-        // CaseOh screen shake for local player
-        if let Some(local_p) = world.players.get(local_player as usize) {
-            if local_p.shake_timer > 0.0 {
-                let intensity = local_p.shake_timer.min(1.0) * 12.0;
-                let sx = ((time * 47.0).sin() * intensity) as i32;
-                let sy = ((time * 61.0).cos() * intensity) as i32;
-                // Shift everything drawn so far
-                d.draw_rectangle(0, 0, render_w, render_h, Color::new(0, 0, 0, 0));
-                // We apply shake by offsetting subsequent draws
-                // (raylib doesn't support global offset easily, so we shake the HUD text)
-                let _ = (sx, sy); // shake applied via camera in draw_hud
-            }
-        }
+        // Screen shake is applied via camera offset at the top of draw_world
 
         hud::draw_hud(&mut d, world, camera, render_w, render_h, local_player);
 

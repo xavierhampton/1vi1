@@ -132,6 +132,12 @@ pub fn update_bullets(
                         x: bullet.prev_position.x, y: bullet.prev_position.y, z: bullet.prev_position.z,
                         r: bullet.color.r, g: bullet.color.g, b: bullet.color.b,
                     });
+                    let expl_radius = (bullet.damage / 25.0).max(0.3);
+                    events.push(GameEvent::Explosion {
+                        x: bullet.prev_position.x, y: bullet.prev_position.y, z: bullet.prev_position.z,
+                        r: bullet.color.r, g: bullet.color.g, b: bullet.color.b,
+                        radius: expl_radius,
+                    });
                     bullet.lifetime = 0.0;
                 }
                 break;
@@ -143,7 +149,7 @@ pub fn update_bullets(
         // Player collision (read-only iteration, defer mutations)
         let self_grace = bullet.lifetime > (crate::combat::bullet::BULLET_LIFETIME - 0.15);
         for (i, player) in players.iter().enumerate() {
-            if !player.alive || player.ghost_timer > 0.0 { continue; }
+            if !player.alive || player.ghost_timer > 0.0 || player.invuln_timer > 0.0 { continue; }
             if i == bullet.owner && self_grace { continue; }
 
             if baabb.overlaps(&player.aabb()) {
@@ -163,6 +169,13 @@ pub fn update_bullets(
                 events.push(GameEvent::PlayerHit {
                     x: hit_pos.x, y: hit_pos.y, z: hit_pos.z,
                     r: player.color.r, g: player.color.g, b: player.color.b,
+                });
+                // Damage-scaled explosion
+                let expl_radius = (bullet.damage / 25.0).max(0.3);
+                events.push(GameEvent::Explosion {
+                    x: hit_pos.x, y: hit_pos.y, z: hit_pos.z,
+                    r: bullet.color.r, g: bullet.color.g, b: bullet.color.b,
+                    radius: expl_radius,
                 });
 
                 damage_queue.push(BulletHitInfo {
@@ -217,16 +230,6 @@ pub fn update_bullets(
             // Ice: slow target
             if hit.ice {
                 players[hit.target].slow_timer = 2.0;
-            }
-
-            // Void pull: suck target toward bullet impact point
-            if hit.void_pull {
-                let dx = hit.bullet_x - players[hit.target].position.x;
-                let dy = hit.bullet_y - (players[hit.target].position.y + players[hit.target].size.y / 2.0);
-                let dist = (dx * dx + dy * dy).sqrt().max(0.01);
-                let pull_force = 12.0;
-                players[hit.target].velocity.x += (dx / dist) * pull_force;
-                players[hit.target].velocity.y += (dy / dist) * pull_force;
             }
 
             // Adrenaline: defender gets speed buff when hit

@@ -34,11 +34,13 @@ pub struct Player {
     pub slow_timer: f32,           // ice shots: -50% speed for 2s
     pub shake_timer: f32,          // CaseOh: screen shake duration
     pub soul_siphon_bonus_hp: f32, // permanent max HP from kills
-    pub doppelganger_timer: f32,   // cooldown between doppelganger auto-shots
+    pub doppel_history: Vec<(f32, f32, f32, f32, bool)>, // (x, y, aim_x, aim_y, shot) for DoppelGanger
+    pub doppel_ghost: (f32, f32, f32, f32), // (x, y, aim_x, aim_y) — ghost rendering pos
     pub upsized_stacks: i32,
     pub rewind_history: Vec<(f32, f32, f32)>, // (x, y, hp) snapshots for Rewind
     pub rewind_sample_timer: f32,
     pub wall_dir: i8, // -1 = wall left, 0 = none, 1 = wall right
+    pub invuln_timer: f32, // spawn invulnerability (Smash Bros style)
 }
 
 impl Player {
@@ -72,11 +74,13 @@ impl Player {
             slow_timer: 0.0,
             shake_timer: 0.0,
             soul_siphon_bonus_hp: 0.0,
-            doppelganger_timer: 0.0,
+            doppel_history: Vec::new(),
+            doppel_ghost: (0.0, 0.0, 0.0, 0.0),
             upsized_stacks: 0,
             rewind_history: Vec::new(),
             rewind_sample_timer: 0.0,
             wall_dir: 0,
+            invuln_timer: 0.0,
         }
     }
 

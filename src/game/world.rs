@@ -7,7 +7,7 @@ use crate::game::cards;
 use crate::game::net::{BulletSnapshot, GameEvent, HealingZoneSnapshot, PlayerSnapshot, StickyBombSnapshot, WorldSnapshot};
 use crate::game::state::GameState;
 use crate::level::level::{self, Level};
-use crate::lobby::state::LobbyState;
+use crate::lobby::state::{GameSettings, LobbyState};
 use crate::player::input::PlayerInput;
 use crate::player::movement;
 use crate::player::player::{Player, HIT_FLASH_DURATION};
@@ -18,7 +18,6 @@ pub const RELOAD_TIME: f32 = 1.5;
 pub const COUNTDOWN_DURATION: f32 = 3.0;
 const ROUND_END_DURATION: f32 = 3.5;
 const SLOW_MO_FACTOR: f32 = 0.25;
-pub const WINS_TO_MATCH: i32 = 3;
 
 const CARD_ENTRANCE_DURATION: f32 = 0.8;
 const CARD_EXIT_DURATION: f32 = 0.8;
@@ -29,7 +28,6 @@ const STICKY_EXPLODE_RADIUS: f32 = 3.0;
 const HEALING_ZONE_RADIUS: f32 = 3.0;
 const HEALING_ZONE_HPS: f32 = 15.0;
 const HEALING_ZONE_LIFETIME: f32 = 5.0;
-const DOPPELGANGER_INTERVAL: f32 = 0.8;
 const ECHO_DELAY: f32 = 0.3;
 
 pub struct StickyBomb {
@@ -60,6 +58,7 @@ pub struct World {
     pub sticky_bombs: Vec<StickyBomb>,
     pub healing_zones: Vec<HealingZone>,
     pub echo_queue: Vec<(f32, Bullet)>, // (delay_remaining, bullet_to_spawn)
+    pub game_settings: GameSettings,
 }
 
 impl World {
@@ -71,13 +70,18 @@ impl World {
         let mut rng = Rng::new(seed);
         let level = level::random_level(rng.next());
         let count = lobby.slots.len().clamp(2, 4);
-        let players = lobby.slots.iter().enumerate().take(count).map(|(i, slot)| {
-            Player::new(
+        let settings = lobby.settings.clone();
+        let starting_hp = if settings.sudden_death { 1.0 } else { settings.starting_hp };
+        let players: Vec<Player> = lobby.slots.iter().enumerate().take(count).map(|(i, slot)| {
+            let mut p = Player::new(
                 level.spawn_points[i],
                 Vector3::new(0.6, 1.6, 0.6),
                 slot.color.to_color(),
                 &slot.name,
-            )
+            );
+            p.hp = starting_hp;
+            p.max_hp = starting_hp;
+            p
         }).collect();
 
         Self {
@@ -93,11 +97,17 @@ impl World {
             sticky_bombs: Vec::new(),
             healing_zones: Vec::new(),
             echo_queue: Vec::new(),
+            game_settings: settings,
         }
+    }
+
+    fn base_hp(&self) -> f32 {
+        if self.game_settings.sudden_death { 1.0 } else { self.game_settings.starting_hp }
     }
 
     fn reset_round(&mut self) {
         self.level = level::random_level(self.rng.next());
+        let base_hp = self.base_hp();
 
         for (i, player) in self.players.iter_mut().enumerate() {
             player.position = self.level.spawn_points[i];
@@ -115,7 +125,8 @@ impl World {
             player.bloodthirsty_timer = 0.0;
             player.slow_timer = 0.0;
             player.shake_timer = 0.0;
-            player.doppelganger_timer = 0.0;
+            player.doppel_history.clear();
+            player.doppel_ghost = (0.0, 0.0, 0.0, 0.0);
             player.upsized_stacks = 0;
             player.rewind_history.clear();
             player.rewind_sample_timer = 0.0;
@@ -123,9 +134,10 @@ impl World {
                 *cd = 0.0;
             }
             player.stats = cards::compute_stats(&player.cards);
-            cards::apply_stats(player, &player.stats.clone());
+            cards::apply_stats(player, &player.stats.clone(), base_hp);
             player.hp = player.max_hp;
             player.bullets_remaining = MAX_BULLETS + player.stats.extra_ammo;
+            player.invuln_timer = 0.0;
         }
         self.bullets.clear();
         self.particles.clear();
@@ -167,9 +179,19 @@ impl World {
     }
 
     fn build_pick_order(&self, winner_idx: u8) -> Vec<u8> {
-        (0..self.players.len() as u8)
-            .filter(|&i| i != winner_idx)
-            .collect()
+        if self.game_settings.everyone_picks {
+            // Everyone picks: losers first, then winner
+            let mut order: Vec<u8> = (0..self.players.len() as u8)
+                .filter(|&i| i != winner_idx)
+                .collect();
+            order.push(winner_idx);
+            order
+        } else {
+            // Losers only
+            (0..self.players.len() as u8)
+                .filter(|&i| i != winner_idx)
+                .collect()
+        }
     }
 
     fn enter_card_pick(&mut self, winner_idx: u8) {
@@ -205,6 +227,7 @@ impl World {
     }
 
     pub fn dev_toggle_card(&mut self, player_idx: usize, card_id: cards::CardId) {
+        let base_hp = self.base_hp();
         if player_idx < self.players.len() {
             let p = &mut self.players[player_idx];
             if let Some(pos) = p.cards.iter().position(|(id, _)| *id == card_id) {
@@ -213,7 +236,7 @@ impl World {
                 p.cards.push((card_id, 0.0));
             }
             p.stats = cards::compute_stats(&p.cards);
-            cards::apply_stats(p, &p.stats.clone());
+            cards::apply_stats(p, &p.stats.clone(), base_hp);
         }
     }
 
@@ -291,7 +314,8 @@ impl World {
 
     // ── Server-authoritative update ─────────────────────────────────────────
 
-    pub fn server_update(&mut self, inputs: &[PlayerInput], dt: f32) -> Vec<GameEvent> {
+    pub fn server_update(&mut self, inputs: &[PlayerInput], raw_dt: f32) -> Vec<GameEvent> {
+        let dt = raw_dt * self.game_settings.turbo_speed;
         let mut events = Vec::new();
 
         for (i, inp) in inputs.iter().enumerate() {
@@ -310,13 +334,17 @@ impl World {
         match &self.state {
             GameState::RoundStart { timer } => {
                 let new_timer = *timer - dt;
+                // Frozen during countdown — only aim updates
                 for (i, inp) in inputs.iter().enumerate() {
                     if i < self.players.len() && self.players[i].alive {
-                        movement::update(&mut self.players[i], inp, &self.level.platforms, dt);
                         self.players[i].aim_dir = inp.aim_dir;
                     }
                 }
                 if new_timer <= 0.0 {
+                    // Grant invulnerability when round actually starts
+                    for player in self.players.iter_mut() {
+                        player.invuln_timer = self.game_settings.spawn_invuln;
+                    }
                     self.state = GameState::Playing;
                 } else {
                     self.state = GameState::RoundStart { timer: new_timer };
@@ -332,14 +360,14 @@ impl World {
 
                 if let Some(inp) = inputs.get(wi as usize) {
                     if (wi as usize) < self.players.len() && self.players[wi as usize].alive {
-                        movement::update(&mut self.players[wi as usize], inp, &self.level.platforms, slow_dt);
+                        movement::update(&mut self.players[wi as usize], inp, &self.level.platforms, slow_dt, self.game_settings.gravity_scale);
                         self.players[wi as usize].aim_dir = inp.aim_dir;
                     }
                 }
 
                 let new_timer = timer - dt;
                 if new_timer <= 0.0 {
-                    if self.scores.get(wi as usize).copied().unwrap_or(0) >= WINS_TO_MATCH {
+                    if self.scores.get(wi as usize).copied().unwrap_or(0) >= self.game_settings.wins_to_match {
                         self.state = GameState::MatchOver {
                             winner_index: wi,
                             timer: MATCH_OVER_DURATION,
@@ -375,6 +403,7 @@ impl World {
     }
 
     fn server_update_card_pick(&mut self, dt: f32) {
+        let base_hp = self.base_hp();
         let (winner_index, current_picker, offered_cards, pick_order, phase_timer, chosen_card, exit_timer) =
             if let GameState::CardPick {
                 winner_index, current_picker, offered_cards, pick_order, phase_timer, chosen_card, exit_timer,
@@ -415,7 +444,7 @@ impl World {
                             }
                             let p = &mut self.players[picker_idx];
                             p.stats = cards::compute_stats(&p.cards);
-                            cards::apply_stats(p, &p.stats.clone());
+                            cards::apply_stats(p, &p.stats.clone(), base_hp);
                         }
                     }
                 }
@@ -458,6 +487,9 @@ impl World {
     }
 
     fn server_update_playing(&mut self, inputs: &[PlayerInput], dt: f32, events: &mut Vec<GameEvent>) {
+        // Track which players actually fire this frame (for DoppelGanger)
+        let mut did_fire = vec![false; self.players.len()];
+
         // Check if any player has Confusion — inverts opponent controls
         let confusion_owners: Vec<usize> = self.players.iter().enumerate()
             .filter(|(_, p)| p.alive && p.stats.confusion)
@@ -492,13 +524,13 @@ impl World {
             if self.players[i].bloodthirsty_timer > 0.0 { speed_mult *= 1.5; }
             if self.players[i].slow_timer > 0.0 { speed_mult *= 0.5; }
 
-            movement::update_with_speed(&mut self.players[i], &inp, &self.level.platforms, dt, speed_mult);
+            movement::update_with_speed(&mut self.players[i], &inp, &self.level.platforms, dt, speed_mult, self.game_settings.gravity_scale);
             self.players[i].aim_dir = inp.aim_dir;
 
             // Reload
             let max_ammo = MAX_BULLETS + self.players[i].stats.extra_ammo;
             if self.players[i].reload_timer > 0.0 {
-                let mut reload_mult = 1.0_f32;
+                let mut reload_mult = self.players[i].stats.reload_time_mult;
                 if self.players[i].overclock_timer > 0.0 { reload_mult *= 0.5; }
                 if self.players[i].adrenaline_timer > 0.0 { reload_mult *= 0.5; }
                 self.players[i].reload_timer = (self.players[i].reload_timer - dt / reload_mult.max(0.1)).max(0.0);
@@ -550,7 +582,12 @@ impl World {
                         }
                         self.bullets.extend(shot_bullets);
                     }
-                    self.players[i].bullets_remaining = 0;
+                    if stats.infinite_ammo {
+                        // Infinite ammo: immediately refill after shotgun blast
+                        self.players[i].bullets_remaining = MAX_BULLETS + stats.extra_ammo;
+                    } else {
+                        self.players[i].bullets_remaining = 0;
+                    }
                 } else {
                     let shot_bullets = self.create_shot_bullets(i, aim, spawn, color, &stats);
                     // Echo Shot
@@ -575,10 +612,11 @@ impl World {
                 if self.players[i].overclock_timer > 0.0 { cd *= 0.5; }
                 if self.players[i].bloodthirsty_timer > 0.0 { cd *= 0.5; }
                 self.players[i].shoot_cooldown = cd;
+                did_fire[i] = true;
 
                 if !stats.no_reload && !stats.infinite_ammo && self.players[i].bullets_remaining <= 0 {
                     self.players[i].bullets_remaining = 0;
-                    self.players[i].reload_timer = RELOAD_TIME * self.players[i].stats.reload_time_mult;
+                    self.players[i].reload_timer = RELOAD_TIME;
                 }
             }
 
@@ -635,7 +673,7 @@ impl World {
                             // Set shake_timer on all opponents
                             for k in 0..self.players.len() {
                                 if k == i { continue; }
-                                self.players[k].shake_timer = 3.0;
+                                self.players[k].shake_timer = 0.5;
                             }
                         }
                         cards::AbilityEffect::Ghost | cards::AbilityEffect::None => {}
@@ -712,6 +750,13 @@ impl World {
             }
         }
 
+        // Tick spawn invulnerability
+        for player in self.players.iter_mut() {
+            if player.invuln_timer > 0.0 {
+                player.invuln_timer = (player.invuln_timer - dt).max(0.0);
+            }
+        }
+
         // Rewind history sampling (every 0.1s, max 30 entries = 3s)
         for player in self.players.iter_mut() {
             if !player.alive { continue; }
@@ -728,42 +773,39 @@ impl World {
             }
         }
 
-        // DoppelGanger auto-fire: periodic shots at nearest enemy
+        // DoppelGanger: record history and replay 1s delayed
+        let mut doppel_bullets: Vec<Bullet> = Vec::new();
         for i in 0..self.players.len() {
             if !self.players[i].alive || !self.players[i].stats.doppelganger { continue; }
-            self.players[i].doppelganger_timer -= dt;
-            if self.players[i].doppelganger_timer <= 0.0 {
-                self.players[i].doppelganger_timer = DOPPELGANGER_INTERVAL;
-                // Find nearest enemy
-                let my_pos = self.players[i].render_center();
-                let mut best_aim = None;
-                let mut best_dist = f32::MAX;
-                for j in 0..self.players.len() {
-                    if j == i || !self.players[j].alive || self.players[j].ghost_timer > 0.0 { continue; }
-                    let target = self.players[j].render_center();
-                    let dx = target.x - my_pos.x;
-                    let dy = target.y - my_pos.y;
-                    let dist = (dx * dx + dy * dy).sqrt();
-                    if dist < best_dist {
-                        best_dist = dist;
-                        let d = dist.max(0.01);
-                        best_aim = Some(Vector2::new(dx / d, dy / d));
-                    }
-                }
-                if let Some(aim) = best_aim {
-                    let color = self.players[i].color;
-                    let spawn = Vector3::new(
-                        my_pos.x + aim.x * 0.5,
-                        my_pos.y + aim.y * 0.5,
-                        my_pos.z,
+            let shot = did_fire[i];
+            let px = self.players[i].position.x;
+            let py = self.players[i].position.y;
+            let pz = self.players[i].position.z;
+            let ax = self.players[i].aim_dir.x;
+            let ay = self.players[i].aim_dir.y;
+            self.players[i].doppel_history.push((px, py, ax, ay, shot));
+            // Keep ~1s of history at ~60fps = 60 samples
+            if self.players[i].doppel_history.len() > 60 {
+                let old = self.players[i].doppel_history.remove(0);
+                self.players[i].doppel_ghost = (old.0, old.1, old.2, old.3);
+                // If the 1s-ago sample had a shot, fire from ghost position
+                if old.4 {
+                    let ghost_pos = Vector3::new(old.0 + old.2 * 0.5, old.1 + 1.1 + old.3 * 0.5, pz);
+                    let ghost_aim = Vector2::new(old.2, old.3);
+                    let color = Color::new(
+                        self.players[i].color.r / 2 + 60,
+                        self.players[i].color.g / 2 + 60,
+                        self.players[i].color.b / 2 + 60,
+                        200,
                     );
                     let stats = self.players[i].stats.clone();
-                    // Doppelganger uses owner's bullet stats but NOT synergy multiplication
-                    let bullet = Bullet::new_with_stats(spawn, aim, i, color, &stats);
-                    self.bullets.push(bullet);
+                    doppel_bullets.push(Bullet::new_with_stats(ghost_pos, ghost_aim, i, color, &stats));
                 }
+            } else {
+                self.players[i].doppel_ghost = (px, py, ax, ay);
             }
         }
+        self.bullets.extend(doppel_bullets);
 
         // Tick echo queue: spawn delayed ghost bullets
         let mut spawned_echoes = Vec::new();
@@ -783,13 +825,72 @@ impl World {
         let (bullet_events, sticky_datas, hit_infos) = update_bullets(&mut self.bullets, &mut self.players, &self.level.platforms, dt);
         events.extend(bullet_events);
 
-        // Soul Siphon: check for kills from hits and grant +5 permanent max HP
+        // Post-hit processing from BulletHitInfo
         for hit in &hit_infos {
+            // Void pull: suck ALL alive enemies toward impact point (whole map range)
+            if hit.void_pull {
+                for j in 0..self.players.len() {
+                    if j == hit.owner || !self.players[j].alive || self.players[j].ghost_timer > 0.0 { continue; }
+                    let dx = hit.bullet_x - self.players[j].position.x;
+                    let dy = hit.bullet_y - (self.players[j].position.y + self.players[j].size.y / 2.0);
+                    let dist = (dx * dx + dy * dy).sqrt().max(0.01);
+                    // Strong constant pull regardless of distance — void is inescapable
+                    let pull_force = 25.0;
+                    self.players[j].velocity.x += (dx / dist) * pull_force;
+                    self.players[j].velocity.y += (dy / dist) * pull_force;
+                }
+            }
+            // Soul Siphon: grant +5 permanent max HP on kill
             if hit.target < self.players.len() && !self.players[hit.target].alive {
-                // Player died this frame
                 if hit.owner < self.players.len() && self.players[hit.owner].stats.soul_siphon {
                     self.players[hit.owner].soul_siphon_bonus_hp += 5.0;
                     self.players[hit.owner].max_hp += 5.0;
+                }
+            }
+        }
+
+        // Explosion AoE splash damage + screen shake from bullet impacts
+        for hit in &hit_infos {
+            let blast_radius = (hit.damage / 25.0) * 2.0; // 25 dmg = 2 units, 100 dmg = 8 units
+            if blast_radius > 1.0 {
+                let splash_dmg = hit.damage * 0.4;
+                for j in 0..self.players.len() {
+                    if j == hit.target || !self.players[j].alive || self.players[j].ghost_timer > 0.0 || self.players[j].invuln_timer > 0.0 { continue; }
+                    let dx = self.players[j].position.x - hit.bullet_x;
+                    let dy = (self.players[j].position.y + self.players[j].size.y / 2.0) - hit.bullet_y;
+                    let dist = (dx * dx + dy * dy).sqrt();
+                    if dist < blast_radius {
+                        let falloff = 1.0 - (dist / blast_radius);
+                        let aoe_dmg = splash_dmg * falloff * self.players[j].stats.damage_taken_mult;
+                        self.players[j].hp = (self.players[j].hp - aoe_dmg).max(0.0);
+                        self.players[j].hit_flash_timer = HIT_FLASH_DURATION;
+                        // Knockback from explosion
+                        if dist > 0.01 {
+                            let kb = 10.0 * falloff;
+                            self.players[j].velocity.x += (dx / dist) * kb;
+                            self.players[j].velocity.y += (dy / dist) * kb;
+                        }
+                    }
+                }
+            }
+        }
+
+        // Explosion screen shake from all explosion events
+        for ev in events.iter() {
+            if let GameEvent::Explosion { x, y, radius, .. } = ev {
+                if *radius > 1.75 {
+                    let shake_intensity = ((*radius - 1.75) * 0.2).min(0.5);
+                    for player in self.players.iter_mut() {
+                        if !player.alive { continue; }
+                        let dx = player.position.x - x;
+                        let dy = (player.position.y + player.size.y / 2.0) - y;
+                        let dist = (dx * dx + dy * dy).sqrt();
+                        let falloff = (1.0 - dist / 25.0).max(0.0);
+                        let shake = shake_intensity * falloff;
+                        if shake > player.shake_timer {
+                            player.shake_timer = shake;
+                        }
+                    }
                 }
             }
         }
@@ -826,7 +927,7 @@ impl World {
         });
         for (pos, _owner, damage, color) in &bomb_explosions {
             for player in self.players.iter_mut() {
-                if !player.alive { continue; }
+                if !player.alive || player.invuln_timer > 0.0 { continue; }
                 let dx = player.position.x - pos.x;
                 let dy = (player.position.y + player.size.y / 2.0) - pos.y;
                 let dist = (dx * dx + dy * dy).sqrt();
@@ -839,6 +940,7 @@ impl World {
             events.push(GameEvent::Explosion {
                 x: pos.x, y: pos.y, z: pos.z,
                 r: color.r, g: color.g, b: color.b,
+                radius: STICKY_EXPLODE_RADIUS,
             });
         }
 
@@ -875,6 +977,9 @@ impl World {
                 let name = self.players[winner_idx].name.clone();
                 let c = self.players[winner_idx].color;
                 self.scores[winner_idx] += 1;
+                for player in self.players.iter_mut() {
+                    player.shake_timer = 0.0;
+                }
                 self.state = GameState::RoundEnd {
                     winner_index: winner_idx as u8,
                     winner_name: name,
@@ -925,7 +1030,12 @@ impl World {
                 slow_timer: p.slow_timer,
                 shake_timer: p.shake_timer,
                 soul_siphon_bonus_hp: p.soul_siphon_bonus_hp,
+                doppel_ghost_x: p.doppel_ghost.0,
+                doppel_ghost_y: p.doppel_ghost.1,
+                doppel_ghost_aim_x: p.doppel_ghost.2,
+                doppel_ghost_aim_y: p.doppel_ghost.3,
                 upsized_stacks: p.upsized_stacks,
+                invuln_timer: p.invuln_timer,
             }
         }).collect();
 
@@ -998,6 +1108,7 @@ impl World {
 
         let names: Vec<String> = self.players.iter().map(|p| p.name.clone()).collect();
         let colors: Vec<Color> = self.players.iter().map(|p| p.color).collect();
+        let base_hp = self.base_hp();
         self.state = snap.game_state(&names, &colors);
         self.card_hover = snap.card_hover;
 
@@ -1026,7 +1137,7 @@ impl World {
                 }
             }
             p.stats = cards::compute_stats(&p.cards);
-            p.max_hp = (100.0 + p.stats.max_hp_bonus) * p.stats.max_hp_mult;
+            p.max_hp = (base_hp + p.stats.max_hp_bonus) * p.stats.max_hp_mult;
             p.poison_timer = ps.poison_timer;
             p.ghost_timer = ps.ghost_timer;
             p.overclock_timer = ps.overclock_timer;
@@ -1036,7 +1147,9 @@ impl World {
             p.slow_timer = ps.slow_timer;
             p.shake_timer = ps.shake_timer;
             p.soul_siphon_bonus_hp = ps.soul_siphon_bonus_hp;
+            p.doppel_ghost = (ps.doppel_ghost_x, ps.doppel_ghost_y, ps.doppel_ghost_aim_x, ps.doppel_ghost_aim_y);
             p.upsized_stacks = ps.upsized_stacks;
+            p.invuln_timer = ps.invuln_timer;
             // Apply upsized size on client
             let upsized_mult = 1.0 + 0.05 * p.upsized_stacks as f32;
             p.size.x = 0.6 * p.stats.size_mult * upsized_mult;

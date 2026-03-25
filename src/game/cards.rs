@@ -406,8 +406,8 @@ pub fn compute_stats(cards: &[(CardId, f32)]) -> PlayerStats {
     s
 }
 
-pub fn apply_stats(player: &mut Player, stats: &PlayerStats) {
-    player.max_hp = (100.0 + stats.max_hp_bonus) * stats.max_hp_mult;
+pub fn apply_stats(player: &mut Player, stats: &PlayerStats, base_hp: f32) {
+    player.max_hp = (base_hp + stats.max_hp_bonus) * stats.max_hp_mult;
     if player.max_hp < 1.0 { player.max_hp = 1.0; }
     if player.hp > player.max_hp { player.hp = player.max_hp; }
     player.size.x = 0.6 * stats.size_mult;

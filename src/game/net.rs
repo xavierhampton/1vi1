@@ -11,7 +11,7 @@ pub enum GameEvent {
     PlayerDied { x: f32, y: f32, z: f32, r: u8, g: u8, b: u8 },
     TerrainHit { x: f32, y: f32, z: f32, r: u8, g: u8, b: u8 },
     BulletFired { x: f32, y: f32, z: f32, vx: f32, vy: f32, owner: u8, r: u8, g: u8, b: u8 },
-    Explosion { x: f32, y: f32, z: f32, r: u8, g: u8, b: u8 },
+    Explosion { x: f32, y: f32, z: f32, r: u8, g: u8, b: u8, radius: f32 },
 }
 
 // ── Snapshot types ───────────────────────────────────────────────────────────
@@ -42,7 +42,12 @@ pub struct PlayerSnapshot {
     pub slow_timer: f32,
     pub shake_timer: f32,
     pub soul_siphon_bonus_hp: f32,
+    pub doppel_ghost_x: f32,
+    pub doppel_ghost_y: f32,
+    pub doppel_ghost_aim_x: f32,
+    pub doppel_ghost_aim_y: f32,
     pub upsized_stacks: i32,
+    pub invuln_timer: f32,
 }
 
 #[derive(Debug, Clone)]
@@ -228,7 +233,12 @@ pub fn encode_snapshot(snap: &WorldSnapshot) -> Vec<u8> {
         push_f32(&mut payload, p.slow_timer);
         push_f32(&mut payload, p.shake_timer);
         push_f32(&mut payload, p.soul_siphon_bonus_hp);
+        push_f32(&mut payload, p.doppel_ghost_x);
+        push_f32(&mut payload, p.doppel_ghost_y);
+        push_f32(&mut payload, p.doppel_ghost_aim_x);
+        push_f32(&mut payload, p.doppel_ghost_aim_y);
         push_i32(&mut payload, p.upsized_stacks);
+        push_f32(&mut payload, p.invuln_timer);
     }
 
     for s in &snap.scores {
@@ -274,12 +284,13 @@ pub fn encode_snapshot(snap: &WorldSnapshot) -> Vec<u8> {
                 push_f32(&mut payload, *z);
                 payload.push(*r); payload.push(*g); payload.push(*b);
             }
-            GameEvent::Explosion { x, y, z, r, g, b } => {
+            GameEvent::Explosion { x, y, z, r, g, b, radius } => {
                 payload.push(4);
                 push_f32(&mut payload, *x);
                 push_f32(&mut payload, *y);
                 push_f32(&mut payload, *z);
                 payload.push(*r); payload.push(*g); payload.push(*b);
+                push_f32(&mut payload, *radius);
             }
             GameEvent::BulletFired { x, y, z, vx, vy, owner, r, g, b } => {
                 payload.push(3);
@@ -380,7 +391,12 @@ pub fn decode_snapshot(data: &[u8]) -> Option<WorldSnapshot> {
         let ps_slow = if pos + 4 <= data.len() { read_f32(data, &mut pos) } else { 0.0 };
         let ps_shake = if pos + 4 <= data.len() { read_f32(data, &mut pos) } else { 0.0 };
         let ps_soul_siphon = if pos + 4 <= data.len() { read_f32(data, &mut pos) } else { 0.0 };
+        let ps_doppel_gx = if pos + 4 <= data.len() { read_f32(data, &mut pos) } else { 0.0 };
+        let ps_doppel_gy = if pos + 4 <= data.len() { read_f32(data, &mut pos) } else { 0.0 };
+        let ps_doppel_ax = if pos + 4 <= data.len() { read_f32(data, &mut pos) } else { 0.0 };
+        let ps_doppel_ay = if pos + 4 <= data.len() { read_f32(data, &mut pos) } else { 0.0 };
         let ps_upsized = if pos + 4 <= data.len() { read_i32(data, &mut pos) } else { 0 };
+        let ps_invuln = if pos + 4 <= data.len() { read_f32(data, &mut pos) } else { 0.0 };
         players.push(PlayerSnapshot {
             pos_x: ps_pos_x, pos_y: ps_pos_y,
             vel_x: ps_vel_x, vel_y: ps_vel_y,
@@ -399,7 +415,12 @@ pub fn decode_snapshot(data: &[u8]) -> Option<WorldSnapshot> {
             slow_timer: ps_slow,
             shake_timer: ps_shake,
             soul_siphon_bonus_hp: ps_soul_siphon,
+            doppel_ghost_x: ps_doppel_gx,
+            doppel_ghost_y: ps_doppel_gy,
+            doppel_ghost_aim_x: ps_doppel_ax,
+            doppel_ghost_aim_y: ps_doppel_ay,
             upsized_stacks: ps_upsized,
+            invuln_timer: ps_invuln,
         });
     }
 
@@ -436,7 +457,7 @@ pub fn decode_snapshot(data: &[u8]) -> Option<WorldSnapshot> {
         if pos >= data.len() { return None; }
         let etype = read_u8(data, &mut pos);
         match etype {
-            0 | 1 | 2 | 4 => {
+            0 | 1 | 2 => {
                 if pos + 15 > data.len() { return None; }
                 let x = read_f32(data, &mut pos);
                 let y = read_f32(data, &mut pos);
@@ -447,9 +468,19 @@ pub fn decode_snapshot(data: &[u8]) -> Option<WorldSnapshot> {
                 events.push(match etype {
                     0 => GameEvent::PlayerHit { x, y, z, r, g, b },
                     1 => GameEvent::PlayerDied { x, y, z, r, g, b },
-                    4 => GameEvent::Explosion { x, y, z, r, g, b },
                     _ => GameEvent::TerrainHit { x, y, z, r, g, b },
                 });
+            }
+            4 => {
+                if pos + 19 > data.len() { return None; }
+                let x = read_f32(data, &mut pos);
+                let y = read_f32(data, &mut pos);
+                let z = read_f32(data, &mut pos);
+                let r = read_u8(data, &mut pos);
+                let g = read_u8(data, &mut pos);
+                let b = read_u8(data, &mut pos);
+                let radius = read_f32(data, &mut pos);
+                events.push(GameEvent::Explosion { x, y, z, r, g, b, radius });
             }
             3 => {
                 if pos + 21 > data.len() { return None; }

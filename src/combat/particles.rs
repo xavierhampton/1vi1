@@ -105,19 +105,20 @@ pub fn spawn_from_events(
             GameEvent::TerrainHit { x, y, z, r, g, b } => {
                 spawn_terrain_hit(particles, rng, Vector3::new(*x, *y, *z), Color::new(*r, *g, *b, 255));
             }
-            GameEvent::Explosion { x, y, z, r, g, b } => {
-                spawn_explosion(particles, rng, Vector3::new(*x, *y, *z), Color::new(*r, *g, *b, 255));
+            GameEvent::Explosion { x, y, z, r, g, b, radius } => {
+                spawn_explosion(particles, rng, Vector3::new(*x, *y, *z), Color::new(*r, *g, *b, 255), *radius);
             }
             GameEvent::BulletFired { .. } => {}
         }
     }
 }
 
-pub fn spawn_explosion(particles: &mut Vec<Particle>, rng: &mut Rng, pos: Vector3, color: Color) {
-    for _ in 0..12 {
+pub fn spawn_explosion(particles: &mut Vec<Particle>, rng: &mut Rng, pos: Vector3, color: Color, radius: f32) {
+    let count = ((radius * 10.0) as i32).clamp(4, 50);
+    for _ in 0..count {
         let angle = rng.range(0.0, std::f32::consts::TAU);
-        let speed = rng.range(3.0, 8.0);
-        let lifetime = rng.range(0.3, 0.6);
+        let speed = rng.range(3.0, 8.0) * radius.sqrt();
+        let lifetime = rng.range(0.3, 0.6) * radius.sqrt();
         particles.push(Particle {
             position: pos,
             vel_x: angle.cos() * speed,
@@ -125,7 +126,7 @@ pub fn spawn_explosion(particles: &mut Vec<Particle>, rng: &mut Rng, pos: Vector
             lifetime,
             max_lifetime: lifetime,
             color,
-            size: rng.range(0.04, 0.10),
+            size: rng.range(0.04, 0.10) * radius.max(0.5),
         });
     }
 }

@@ -1,5 +1,5 @@
 use crate::game::net::{self, WorldSnapshot};
-use crate::lobby::state::{LobbyColor, LobbyState, PlayerSlot};
+use crate::lobby::state::{GameSettings, LobbyColor, LobbyState, PlayerSlot};
 use crate::player::input::PlayerInput;
 
 // ── Messages ─────────────────────────────────────────────────────────────────
@@ -83,6 +83,14 @@ pub fn encode_server(msg: &ServerMsg) -> Vec<u8> {
                 payload.push(slot.ready as u8);
                 payload.push(slot.is_host as u8);
             }
+            // Game settings
+            payload.push(state.settings.wins_to_match as u8);
+            payload.extend_from_slice(&state.settings.spawn_invuln.to_be_bytes());
+            payload.extend_from_slice(&state.settings.starting_hp.to_be_bytes());
+            payload.extend_from_slice(&state.settings.gravity_scale.to_be_bytes());
+            payload.extend_from_slice(&state.settings.turbo_speed.to_be_bytes());
+            payload.push(state.settings.sudden_death as u8);
+            payload.push(state.settings.everyone_picks as u8);
         }
         ServerMsg::Rejected { reason } => {
             payload.push(0x82);
@@ -174,9 +182,11 @@ pub fn decode_server_incoming(buf: &[u8]) -> Option<(ServerIncoming, usize)> {
                 pos += 3;
                 slots.push(PlayerSlot { name, color, ready, is_host });
             }
+            // Decode game settings (with fallback defaults for backwards compat)
+            let settings = decode_settings_from_snapshot(data, &mut pos);
             ServerIncoming::Lobby(ServerMsg::LobbySnapshot {
                 my_index,
-                state: LobbyState { slots },
+                state: LobbyState { slots, settings },
             })
         }
         0x82 => ServerIncoming::Lobby(ServerMsg::Rejected { reason: data[1] }),
@@ -201,6 +211,44 @@ pub fn decode_server_incoming(buf: &[u8]) -> Option<(ServerIncoming, usize)> {
         _ => return None,
     };
     Some((msg, consumed))
+}
+
+fn read_f32_lobby(data: &[u8], pos: &mut usize) -> f32 {
+    if *pos + 4 > data.len() { return 0.0; }
+    let v = f32::from_be_bytes([data[*pos], data[*pos+1], data[*pos+2], data[*pos+3]]);
+    *pos += 4;
+    v
+}
+
+fn read_u8_lobby(data: &[u8], pos: &mut usize) -> u8 {
+    if *pos >= data.len() { return 0; }
+    let v = data[*pos];
+    *pos += 1;
+    v
+}
+
+fn decode_settings_from_snapshot(data: &[u8], pos: &mut usize) -> GameSettings {
+    if *pos >= data.len() {
+        return GameSettings::default();
+    }
+    let wins_to_match = read_u8_lobby(data, pos) as i32;
+    let spawn_invuln = read_f32_lobby(data, pos);
+    let starting_hp = read_f32_lobby(data, pos);
+    let gravity_scale = read_f32_lobby(data, pos);
+    let turbo_speed = read_f32_lobby(data, pos);
+    let sudden_death = read_u8_lobby(data, pos) != 0;
+    let everyone_picks = read_u8_lobby(data, pos) != 0;
+    // Validate: if we got zero values from short data, use defaults
+    let defaults = GameSettings::default();
+    GameSettings {
+        wins_to_match: if wins_to_match == 0 { defaults.wins_to_match } else { wins_to_match },
+        spawn_invuln,
+        starting_hp: if starting_hp == 0.0 { defaults.starting_hp } else { starting_hp },
+        gravity_scale: if gravity_scale == 0.0 { defaults.gravity_scale } else { gravity_scale },
+        turbo_speed: if turbo_speed == 0.0 { defaults.turbo_speed } else { turbo_speed },
+        sudden_death,
+        everyone_picks,
+    }
 }
 
 // ── Read buffer for streaming TCP ────────────────────────────────────────────

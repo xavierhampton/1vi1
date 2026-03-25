@@ -12,7 +12,7 @@ use game::server::GameServer;
 use game::state::GameState;
 use game::world::World;
 use lobby::client::LobbyClient;
-use lobby::screen::{draw_lobby, lobby_input, LobbyInput};
+use lobby::screen::{draw_lobby, draw_settings_panel, lobby_input, LobbyInput, LobbySettingsState};
 use lobby::server::LobbyServer;
 use lobby::state::{LobbyColor, PlayerSlot};
 use menu::menu::{Menu, MenuAction};
@@ -34,6 +34,7 @@ enum AppState {
     Lobby(LobbyRole),
     InGameHost(GameServer),
     InGameClient(GameClient),
+    ReturnToLobby { name: String, dev_mode: bool },
 }
 
 fn main() {
@@ -55,6 +56,7 @@ fn main() {
     let mut lobby_time: f32 = 0.0;
     let mut card_anim = CardPickAnim::new();
     let mut dev_overlay_open = false;
+    let mut lobby_settings = LobbySettingsState::new();
 
     while !rl.window_should_close() {
         let dt = rl.get_frame_time();
@@ -118,7 +120,8 @@ fn main() {
                 let h_now = rl.get_screen_height();
                 let accent = menu.theme().particle_color_primary;
                 menu.fx.update(dt, w_now, h_now, accent);
-                let mut input = lobby_input(&rl);
+                lobby_settings.time += dt;
+                let mut input = lobby_input(&rl, lobby_settings.open);
                 // Ignore the Enter keypress that carried over from the join screen
                 if lobby_time < 0.1 && matches!(input, LobbyInput::ToggleReady) {
                     input = LobbyInput::None;
@@ -127,6 +130,27 @@ fn main() {
                 match role {
                     LobbyRole::Host(server) => {
                         match input {
+                            LobbyInput::ToggleSettings => {
+                                lobby_settings.open = !lobby_settings.open;
+                            }
+                            LobbyInput::SettingsUp => {
+                                if lobby_settings.selected > 0 {
+                                    lobby_settings.selected -= 1;
+                                } else {
+                                    lobby_settings.selected = 6;
+                                }
+                            }
+                            LobbyInput::SettingsDown => {
+                                lobby_settings.selected = (lobby_settings.selected + 1) % 7;
+                            }
+                            LobbyInput::SettingsLeft => {
+                                lobby::screen::apply_settings_change(&mut server.state.settings, lobby_settings.selected, -1);
+                                server.notify_settings_changed();
+                            }
+                            LobbyInput::SettingsRight => {
+                                lobby::screen::apply_settings_change(&mut server.state.settings, lobby_settings.selected, 1);
+                                server.notify_settings_changed();
+                            }
                             LobbyInput::ColorLeft => {
                                 let cur = server.state.slots[0].color;
                                 let next = server.state.prev_available_color(cur, 0);
@@ -189,12 +213,29 @@ fn main() {
                                 lobby_time,
                                 &menu.fx,
                             );
+                            if lobby_settings.open {
+                                draw_settings_panel(&mut d, &server.state.settings, &lobby_settings, theme, true);
+                            }
                         }
                     }
                     LobbyRole::Client(client) => {
                         client.update();
 
                         match input {
+                            LobbyInput::ToggleSettings => {
+                                lobby_settings.open = !lobby_settings.open;
+                            }
+                            LobbyInput::SettingsUp => {
+                                if lobby_settings.selected > 0 {
+                                    lobby_settings.selected -= 1;
+                                } else {
+                                    lobby_settings.selected = 6;
+                                }
+                            }
+                            LobbyInput::SettingsDown => {
+                                lobby_settings.selected = (lobby_settings.selected + 1) % 7;
+                            }
+                            LobbyInput::SettingsLeft | LobbyInput::SettingsRight => {} // clients can't edit
                             LobbyInput::ColorLeft => {
                                 let my_idx = client.my_index as usize;
                                 if my_idx < client.state.slots.len() {
@@ -259,6 +300,9 @@ fn main() {
                                 lobby_time,
                                 &menu.fx,
                             );
+                            if lobby_settings.open {
+                                draw_settings_panel(&mut d, &client.state.settings, &lobby_settings, theme, false);
+                            }
                         }
                     }
                 }
@@ -268,15 +312,8 @@ fn main() {
                     if dev_overlay_open {
                         dev_overlay_open = false;
                     } else if matches!(game_server.world.state, GameState::MatchOver { .. }) {
-                        // Return to lobby after match
-                        let name = if menu.player_name.is_empty() { "Player" } else { &menu.player_name };
-                        if let Ok(mut server) = LobbyServer::start(name, DEFAULT_PORT) {
-                            server.dev_mode = menu.dev_mode;
-                            lobby_time = 0.0;
-                            next_state = Some(AppState::Lobby(LobbyRole::Host(server)));
-                        } else {
-                            next_state = Some(AppState::Menu);
-                        }
+                        let name = if menu.player_name.is_empty() { "Player".to_string() } else { menu.player_name.clone() };
+                        next_state = Some(AppState::ReturnToLobby { name, dev_mode: menu.dev_mode });
                     } else {
                         let name = game_server.world.players[0].name.clone();
                         game_server.notify_leaving(&name);
@@ -334,6 +371,19 @@ fn main() {
                         game_client.my_index, false,
                     );
                 }
+            }
+            AppState::ReturnToLobby { .. } => {} // handled below
+        }
+
+        // Handle deferred lobby creation (port is now free after old state dropped)
+        if let AppState::ReturnToLobby { ref name, dev_mode } = app_state {
+            let name = name.clone();
+            if let Ok(mut server) = LobbyServer::start(&name, DEFAULT_PORT) {
+                server.dev_mode = dev_mode;
+                lobby_time = 0.0;
+                app_state = AppState::Lobby(LobbyRole::Host(server));
+            } else {
+                app_state = AppState::Menu;
             }
         }
 

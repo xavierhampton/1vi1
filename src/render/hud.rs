@@ -2,7 +2,7 @@ use raylib::prelude::*;
 
 use crate::game::cards::CARD_CATALOG;
 use crate::game::state::GameState;
-use crate::game::world::{World, COUNTDOWN_DURATION, MAX_BULLETS, RELOAD_TIME, WINS_TO_MATCH};
+use crate::game::world::{World, COUNTDOWN_DURATION, MAX_BULLETS, RELOAD_TIME};
 use crate::level::level::level_name;
 
 pub fn draw_hud(
@@ -206,7 +206,7 @@ pub fn draw_hud(
 
     // ── Score pips (top right) — squares with thick outlines ───────────
     {
-        let wins_needed = WINS_TO_MATCH;
+        let wins_needed = world.game_settings.wins_to_match;
         let pip_size: i32 = 14;
         let pip_gap: i32 = 6;
         let row_gap: i32 = 22;

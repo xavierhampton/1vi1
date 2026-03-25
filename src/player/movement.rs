@@ -18,11 +18,11 @@ const MAX_AIR_JUMPS: i32 = 1;
 const WALL_JUMP_H: f32 = 10.0;
 const WALL_SLIDE_FALL: f32 = 4.0;
 
-pub fn update(player: &mut Player, input: &PlayerInput, platforms: &[Platform], dt: f32) {
-    update_with_speed(player, input, platforms, dt, 1.0);
+pub fn update(player: &mut Player, input: &PlayerInput, platforms: &[Platform], dt: f32, gravity_scale: f32) {
+    update_with_speed(player, input, platforms, dt, 1.0, gravity_scale);
 }
 
-pub fn update_with_speed(player: &mut Player, input: &PlayerInput, platforms: &[Platform], dt: f32, speed_mult: f32) {
+pub fn update_with_speed(player: &mut Player, input: &PlayerInput, platforms: &[Platform], dt: f32, speed_mult: f32, gravity_scale: f32) {
     let prev_grounded = player.grounded;
     let prev_wall = player.wall_dir;
     player.grounded = false;
@@ -68,9 +68,9 @@ pub fn update_with_speed(player: &mut Player, input: &PlayerInput, platforms: &[
     }
 
     // Gravity
-    player.velocity.y -= GRAVITY * dt;
-    if player.velocity.y < -MAX_FALL_SPEED {
-        player.velocity.y = -MAX_FALL_SPEED;
+    player.velocity.y -= GRAVITY * gravity_scale * dt;
+    if player.velocity.y < -MAX_FALL_SPEED * gravity_scale {
+        player.velocity.y = -MAX_FALL_SPEED * gravity_scale;
     }
 
     // Jump (bunny hop: holding jump auto-jumps on landing)

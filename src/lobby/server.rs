@@ -229,6 +229,10 @@ impl LobbyServer {
         }
     }
 
+    pub fn notify_settings_changed(&mut self) {
+        self.broadcast_snapshot();
+    }
+
     pub fn host_change_color(&mut self, color: LobbyColor) {
         if !self.state.color_taken(color, Some(0)) {
             self.state.slots[0].color = color;

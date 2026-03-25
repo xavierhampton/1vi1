@@ -38,7 +38,7 @@ impl LobbyClient {
         });
 
         let mut client = Self {
-            state: LobbyState { slots: Vec::new() },
+            state: LobbyState { slots: Vec::new(), settings: crate::lobby::state::GameSettings::default() },
             my_index: 0,
             rejected: false,
             game_starting: false,
