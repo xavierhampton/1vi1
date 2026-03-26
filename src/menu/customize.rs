@@ -10,8 +10,7 @@ pub const MAX_EQUIPPED: usize = 3;
 pub const ACCESSORY_COUNT: usize = 8;
 
 pub const ACCESSORY_NAMES: [&str; ACCESSORY_COUNT] = [
-    "TOP HAT", "CROWN", "HALO", "BANDANA",
-    "HORNS", "WINGS", "BOWTIE", "ANTENNA",
+    "TOP HAT", "CROWN", "HALO", "BANDANA", "HORNS", "WINGS", "BOWTIE", "ANTENNA",
 ];
 
 const ACCENT_PALETTE: [(u8, u8, u8); 10] = [
@@ -33,8 +32,8 @@ pub fn empty_equipped() -> Equipped {
     [(ACCESSORY_NONE, 255, 255, 255); MAX_EQUIPPED]
 }
 
-const PREVIEW_TEX_W: u32 = 220;
-const PREVIEW_TEX_H: u32 = 270;
+const PREVIEW_TEX_W: u32 = 280;
+const PREVIEW_TEX_H: u32 = 340;
 
 // ── Customize editor ─────────────────────────────────────────────────────────
 
@@ -49,6 +48,7 @@ pub struct CustomizeEditor {
     grace_frames: u8,
     time: f32,
     preview_tex: Option<RenderTexture2D>,
+    preview_shader: Option<Shader>,
 }
 
 impl CustomizeEditor {
@@ -57,7 +57,9 @@ impl CustomizeEditor {
         let color_sel = sel
             .and_then(|s| {
                 let (_, r, g, b) = existing[s];
-                ACCENT_PALETTE.iter().position(|&(pr, pg, pb)| pr == r && pg == g && pb == b)
+                ACCENT_PALETTE
+                    .iter()
+                    .position(|&(pr, pg, pb)| pr == r && pg == g && pb == b)
             })
             .unwrap_or(0);
         Self {
@@ -71,6 +73,7 @@ impl CustomizeEditor {
             grace_frames: 3,
             time: 0.0,
             preview_tex: None,
+            preview_shader: None,
         }
     }
 
@@ -88,6 +91,7 @@ impl CustomizeEditor {
                 rl.load_render_texture(thread, PREVIEW_TEX_W, PREVIEW_TEX_H)
                     .expect("preview texture"),
             );
+            self.preview_shader = Some(rl.load_shader(thread, None, Some("assets/shaders/crt.fs")));
         }
 
         let player_color = LOBBY_COLORS[self.preview_color].0;
@@ -104,11 +108,14 @@ impl CustomizeEditor {
         let (aim_x, aim_y) = if len < 0.1 {
             (0.0, 0.0)
         } else {
-            ((norm_x / len).clamp(-1.0, 1.0), (norm_y / len).clamp(-1.0, 1.0))
+            (
+                (norm_x / len).clamp(-1.0, 1.0),
+                (norm_y / len).clamp(-1.0, 1.0),
+            )
         };
 
         let camera = Camera3D::perspective(
-            Vector3::new(0.0, 0.8, 3.0),
+            Vector3::new(0.0, 0.8, 2.6),
             Vector3::new(0.0, 0.8, 0.0),
             Vector3::new(0.0, 1.0, 0.0),
             40.0,
@@ -121,7 +128,13 @@ impl CustomizeEditor {
             {
                 let mut d3 = d.begin_mode3D(camera);
 
-                d3.draw_cube(Vector3::new(0.0, -0.03, 0.0), 1.2, 0.02, 0.3, Color::new(40, 40, 50, 255));
+                d3.draw_cube(
+                    Vector3::new(0.0, -0.03, 0.0),
+                    1.2,
+                    0.02,
+                    0.3,
+                    Color::new(40, 40, 50, 255),
+                );
 
                 let py = bob;
                 let body_r = 0.38_f32;
@@ -158,12 +171,22 @@ impl CustomizeEditor {
                 let eye_cz = base_z + aim_x * look_shift * right_z;
 
                 d3.draw_sphere(
-                    Vector3::new(eye_cx - right_x * eye_spread, eye_cy, eye_cz - right_z * eye_spread),
-                    eye_r, Color::new(20, 20, 25, 255),
+                    Vector3::new(
+                        eye_cx - right_x * eye_spread,
+                        eye_cy,
+                        eye_cz - right_z * eye_spread,
+                    ),
+                    eye_r,
+                    Color::new(20, 20, 25, 255),
                 );
                 d3.draw_sphere(
-                    Vector3::new(eye_cx + right_x * eye_spread, eye_cy, eye_cz + right_z * eye_spread),
-                    eye_r, Color::new(20, 20, 25, 255),
+                    Vector3::new(
+                        eye_cx + right_x * eye_spread,
+                        eye_cy,
+                        eye_cz + right_z * eye_spread,
+                    ),
+                    eye_r,
+                    Color::new(20, 20, 25, 255),
                 );
 
                 // Accessories
@@ -171,9 +194,18 @@ impl CustomizeEditor {
                     if id != ACCESSORY_NONE {
                         let ac = Color::new(r, g, b, 255);
                         crate::render::game::draw_accessory_3d(
-                            &mut d3, id, ac, head_center, body_center,
-                            head_r, body_r, 1.0,
-                            fwd_x, fwd_z, right_x, right_z,
+                            &mut d3,
+                            id,
+                            ac,
+                            head_center,
+                            body_center,
+                            head_r,
+                            body_r,
+                            1.0,
+                            fwd_x,
+                            fwd_z,
+                            right_x,
+                            right_z,
                         );
                     }
                 }
@@ -199,7 +231,8 @@ impl CustomizeEditor {
         // ── Name input ───────────────────────────────────────────────────────
         if self.name_focused {
             // Paste
-            if (rl.is_key_down(KeyboardKey::KEY_LEFT_CONTROL) || rl.is_key_down(KeyboardKey::KEY_RIGHT_CONTROL))
+            if (rl.is_key_down(KeyboardKey::KEY_LEFT_CONTROL)
+                || rl.is_key_down(KeyboardKey::KEY_RIGHT_CONTROL))
                 && rl.is_key_pressed(KeyboardKey::KEY_V)
             {
                 let clip = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -222,12 +255,14 @@ impl CustomizeEditor {
                     _ => {}
                 }
             }
-            if (rl.is_key_pressed(KeyboardKey::KEY_BACKSPACE) || rl.is_key_pressed_repeat(KeyboardKey::KEY_BACKSPACE))
+            if (rl.is_key_pressed(KeyboardKey::KEY_BACKSPACE)
+                || rl.is_key_pressed_repeat(KeyboardKey::KEY_BACKSPACE))
                 && !self.name.is_empty()
             {
                 self.name.pop();
             }
-            if rl.is_key_pressed(KeyboardKey::KEY_ENTER) || rl.is_key_pressed(KeyboardKey::KEY_TAB) {
+            if rl.is_key_pressed(KeyboardKey::KEY_ENTER) || rl.is_key_pressed(KeyboardKey::KEY_TAB)
+            {
                 self.name_focused = false;
             }
         } else {
@@ -262,7 +297,7 @@ impl CustomizeEditor {
                 self.name_focused = false;
             }
 
-            // Back button (same position as join screen)
+            // Back button
             let bw = 200;
             let bh = 34;
             let bx = render_w / 2 - bw / 2;
@@ -284,7 +319,10 @@ impl CustomizeEditor {
                     if self.equipped[i].0 != ACCESSORY_NONE {
                         self.selected_slot = Some(i);
                         let (_, r, g, b) = self.equipped[i];
-                        if let Some(ci) = ACCENT_PALETTE.iter().position(|&(pr, pg, pb)| pr == r && pg == g && pb == b) {
+                        if let Some(ci) = ACCENT_PALETTE
+                            .iter()
+                            .position(|&(pr, pg, pb)| pr == r && pg == g && pb == b)
+                        {
                             self.color_sel = ci;
                         }
                     }
@@ -363,7 +401,7 @@ impl CustomizeEditor {
 
     // ── Drawing (own full screen — bg drawn by Menu) ─────────────────────────
 
-    pub fn draw(&self, d: &mut RaylibDrawHandle, theme: &Theme, render_w: i32, render_h: i32) {
+    pub fn draw(&mut self, d: &mut RaylibDrawHandle, theme: &Theme, render_w: i32, render_h: i32) {
         let ly = Layout::new(render_w, render_h);
 
         // Title (matches settings screen style)
@@ -371,11 +409,29 @@ impl CustomizeEditor {
         let title_size = 60;
         let title_w = d.measure_text(title, title_size);
         let cx = render_w / 2;
-        d.draw_text(title, cx - title_w / 2 + 3, ly.title_y + 3, title_size, theme.title_shadow_color);
-        d.draw_text(title, cx - title_w / 2, ly.title_y, title_size, theme.title_color);
+        d.draw_text(
+            title,
+            cx - title_w / 2 + 3,
+            ly.title_y + 3,
+            title_size,
+            theme.title_shadow_color,
+        );
+        d.draw_text(
+            title,
+            cx - title_w / 2,
+            ly.title_y,
+            title_size,
+            theme.title_color,
+        );
         let line_w = title_w + 40;
         let line_y = ly.title_y + title_size + 10;
-        d.draw_rectangle(cx - line_w / 2, line_y, line_w, theme.accent_height, theme.accent_color);
+        d.draw_rectangle(
+            cx - line_w / 2,
+            line_y,
+            line_w,
+            theme.accent_height,
+            theme.accent_color,
+        );
 
         self.draw_preview(d, theme, &ly);
         self.draw_name(d, theme, &ly);
@@ -383,7 +439,7 @@ impl CustomizeEditor {
         self.draw_equipped_bar(d, theme, &ly);
         self.draw_palette(d, theme, &ly);
 
-        // Back button (same style as join screen)
+        // Back button
         let back = "BACK";
         let back_size = 28;
         let back_w = d.measure_text(back, back_size);
@@ -392,15 +448,25 @@ impl CustomizeEditor {
         let mx = d.get_mouse_x();
         let my = d.get_mouse_y();
         let hit_w = 200;
-        let hit_h = 34;
-        let hover = mx >= render_w / 2 - hit_w / 2 && mx <= render_w / 2 + hit_w / 2
-            && my >= back_y && my <= back_y + hit_h;
-        let color = if hover { theme.item_hover_color } else { theme.item_color };
+        let hit_h = back_size + 8;
+        let hover = mx >= render_w / 2 - hit_w / 2
+            && mx <= render_w / 2 + hit_w / 2
+            && my >= back_y
+            && my <= back_y + hit_h;
+        let color = if hover {
+            theme.item_hover_color
+        } else {
+            theme.item_color
+        };
         if hover {
-            // Pulsing selector bar (same as draw_selector in menu.rs)
             let bar_x = back_x - theme.selector_gap - theme.selector_width;
             let bar_pulse = ((self.time * theme.pulse_speed * 1.5).sin() * 40.0 + 215.0) as u8;
-            let bar_color = Color::new(theme.selector_color.r, theme.selector_color.g, theme.selector_color.b, bar_pulse);
+            let bar_color = Color::new(
+                theme.selector_color.r,
+                theme.selector_color.g,
+                theme.selector_color.b,
+                bar_pulse,
+            );
             d.draw_rectangle(bar_x, back_y, theme.selector_width, back_size, bar_color);
         }
         d.draw_text(back, back_x, back_y, back_size, color);
@@ -409,29 +475,52 @@ impl CustomizeEditor {
         let footer = "A/D player color  |  Esc to go back";
         let footer_size = theme.footer_size;
         let footer_w = d.measure_text(footer, footer_size);
-        d.draw_text(footer, render_w / 2 - footer_w / 2, render_h - footer_size - 20, footer_size, theme.footer_color);
+        d.draw_text(
+            footer,
+            render_w / 2 - footer_w / 2,
+            render_h - footer_size - 20,
+            footer_size,
+            theme.footer_color,
+        );
     }
 
-    fn draw_preview(&self, d: &mut RaylibDrawHandle, theme: &Theme, ly: &Layout) {
+    fn draw_preview(&mut self, d: &mut RaylibDrawHandle, theme: &Theme, ly: &Layout) {
         let px = ly.preview_x;
         let py = ly.preview_y;
         let pw = ly.preview_w;
         let full_h = ly.preview_h;
 
         if let Some(ref tex) = self.preview_tex {
-            d.draw_texture_rec(
-                tex.texture(),
-                Rectangle::new(0.0, 0.0, PREVIEW_TEX_W as f32, -(PREVIEW_TEX_H as f32)),
-                Vector2::new(px as f32, py as f32),
-                Color::WHITE,
-            );
+            if let Some(ref mut shader) = self.preview_shader {
+                let mut s = d.begin_shader_mode(shader);
+                s.draw_texture_rec(
+                    tex.texture(),
+                    Rectangle::new(0.0, 0.0, PREVIEW_TEX_W as f32, -(PREVIEW_TEX_H as f32)),
+                    Vector2::new(px as f32, py as f32),
+                    Color::WHITE,
+                );
+            } else {
+                d.draw_texture_rec(
+                    tex.texture(),
+                    Rectangle::new(0.0, 0.0, PREVIEW_TEX_W as f32, -(PREVIEW_TEX_H as f32)),
+                    Vector2::new(px as f32, py as f32),
+                    Color::WHITE,
+                );
+            }
         } else {
-            d.draw_rectangle(px, py, pw, PREVIEW_TEX_H as i32, Color::new(10, 10, 16, 255));
+            d.draw_rectangle(
+                px,
+                py,
+                pw,
+                PREVIEW_TEX_H as i32,
+                Color::new(10, 10, 16, 255),
+            );
         }
 
         d.draw_rectangle_lines_ex(
             Rectangle::new(px as f32, py as f32, pw as f32, full_h as f32),
-            2.0, theme.selector_color,
+            2.0,
+            theme.selector_color,
         );
 
         // Player color selector
@@ -441,28 +530,60 @@ impl CustomizeEditor {
         let label_w = d.measure_text(&color_name, label_size);
         let center_x = px + pw / 2;
         let sel_y = ly.color_sel_y;
-        d.draw_text("<", center_x - label_w / 2 - 22, sel_y, label_size, theme.item_hover_color);
-        d.draw_text(&color_name, center_x - label_w / 2, sel_y, label_size, player_color);
-        d.draw_text(">", center_x + label_w / 2 + 8, sel_y, label_size, theme.item_hover_color);
+        d.draw_text(
+            "<",
+            center_x - label_w / 2 - 16,
+            sel_y,
+            label_size,
+            theme.item_hover_color,
+        );
+        d.draw_text(
+            &color_name,
+            center_x - label_w / 2,
+            sel_y,
+            label_size,
+            player_color,
+        );
+        d.draw_text(
+            ">",
+            center_x + label_w / 2 + 8,
+            sel_y,
+            label_size,
+            theme.item_hover_color,
+        );
     }
 
     fn draw_name(&self, d: &mut RaylibDrawHandle, theme: &Theme, ly: &Layout) {
         let (bx, by, bw, bh) = ly.name_box;
-        d.draw_text("NAME", ly.catalog_x, by - 18, 16, theme.item_color);
+        d.draw_text("NAME", ly.catalog_x, by - 20, 18, theme.item_color);
         d.draw_rectangle(bx, by, bw, bh, Color::new(20, 20, 30, 220));
-        let border = if self.name_focused { theme.selector_color } else { Color::new(60, 60, 70, 200) };
+        let border = if self.name_focused {
+            theme.selector_color
+        } else {
+            Color::new(60, 60, 70, 200)
+        };
         d.draw_rectangle_lines(bx, by, bw, bh, border);
         let display = if self.name_focused {
             format!("{}_", self.name)
         } else {
             self.name.clone()
         };
-        let text_color = if self.name_focused { theme.item_hover_color } else { theme.item_color };
-        d.draw_text(&display, bx + 8, by + (bh - 20) / 2, 20, text_color);
+        let text_color = if self.name_focused {
+            theme.item_hover_color
+        } else {
+            theme.item_color
+        };
+        d.draw_text(&display, bx + 10, by + (bh - 22) / 2, 22, text_color);
     }
 
     fn draw_catalog(&self, d: &mut RaylibDrawHandle, theme: &Theme, ly: &Layout) {
-        d.draw_text("ACCESSORIES", ly.catalog_x, ly.catalog_y - 22, 18, theme.item_color);
+        d.draw_text(
+            "ACCESSORIES",
+            ly.catalog_x,
+            ly.catalog_y - 24,
+            20,
+            theme.item_color,
+        );
 
         for i in 0..ACCESSORY_COUNT {
             let (ix, iy, iw, ih) = ly.catalog_item(i);
@@ -470,22 +591,32 @@ impl CustomizeEditor {
             let is_equipped = self.equipped.iter().any(|s| s.0 == i as u8);
 
             let bg = if is_equipped {
-                Color::new(theme.selector_color.r / 4, theme.selector_color.g / 4, theme.selector_color.b / 4, 200)
+                Color::new(
+                    theme.selector_color.r / 4,
+                    theme.selector_color.g / 4,
+                    theme.selector_color.b / 4,
+                    200,
+                )
             } else {
                 Color::new(16, 16, 24, 220)
             };
             d.draw_rectangle(ix, iy, iw, ih, bg);
 
-            let border = if is_hovered { theme.item_hover_color }
-                else if is_equipped { theme.selector_color }
-                else { Color::new(50, 50, 60, 200) };
+            let border = if is_hovered {
+                theme.item_hover_color
+            } else if is_equipped {
+                theme.selector_color
+            } else {
+                Color::new(50, 50, 60, 200)
+            };
             d.draw_rectangle_lines_ex(
                 Rectangle::new(ix as f32, iy as f32, iw as f32, ih as f32),
-                if is_hovered { 2.0 } else { 1.0 }, border,
+                if is_hovered { 2.0 } else { 1.0 },
+                border,
             );
 
             let name = ACCESSORY_NAMES[i];
-            let name_size = 14;
+            let name_size = 16;
             let name_w = d.measure_text(name, name_size);
             let name_color = if is_equipped {
                 let eq = self.equipped.iter().find(|s| s.0 == i as u8).unwrap();
@@ -495,20 +626,29 @@ impl CustomizeEditor {
             } else {
                 theme.item_color
             };
-            d.draw_text(name, ix + iw / 2 - name_w / 2, iy + ih / 2 - name_size / 2, name_size, name_color);
+            d.draw_text(
+                name,
+                ix + iw / 2 - name_w / 2,
+                iy + ih / 2 - name_size / 2,
+                name_size,
+                name_color,
+            );
         }
     }
 
     fn draw_equipped_bar(&self, d: &mut RaylibDrawHandle, theme: &Theme, ly: &Layout) {
-        let has_sel = self.selected_slot.map(|s| self.equipped[s].0 != ACCESSORY_NONE).unwrap_or(false);
+        let has_sel = self
+            .selected_slot
+            .map(|s| self.equipped[s].0 != ACCESSORY_NONE)
+            .unwrap_or(false);
         let header = if has_sel {
             let slot = self.selected_slot.unwrap();
             let name = ACCESSORY_NAMES[self.equipped[slot].0 as usize];
-            format!("EQUIPPED — recoloring {}", name)
+            format!("EQUIPPED:  recoloring {}", name)
         } else {
-            "EQUIPPED — click a slot to recolor".to_string()
+            "EQUIPPED:  click a slot to recolor".to_string()
         };
-        d.draw_text(&header, ly.equipped_x, ly.equipped_y, 14, theme.item_color);
+        d.draw_text(&header, ly.equipped_x, ly.equipped_y, 16, theme.item_color);
 
         for i in 0..MAX_EQUIPPED {
             let (sx, sy, sw, sh) = ly.equipped_slot(i);
@@ -517,35 +657,69 @@ impl CustomizeEditor {
 
             if slot.0 != ACCESSORY_NONE {
                 let color = Color::new(slot.1, slot.2, slot.3, 255);
-                d.draw_rectangle(sx, sy, sw, sh, Color::new(slot.1 / 5, slot.2 / 5, slot.3 / 5, 220));
+                d.draw_rectangle(
+                    sx,
+                    sy,
+                    sw,
+                    sh,
+                    Color::new(slot.1 / 5, slot.2 / 5, slot.3 / 5, 220),
+                );
                 let border_color = if is_selected {
                     let pulse = (self.time * 4.0).sin() * 0.3 + 0.7;
-                    Color::new((color.r as f32 * pulse) as u8, (color.g as f32 * pulse) as u8, (color.b as f32 * pulse) as u8, 255)
-                } else { color };
+                    Color::new(
+                        (color.r as f32 * pulse) as u8,
+                        (color.g as f32 * pulse) as u8,
+                        (color.b as f32 * pulse) as u8,
+                        255,
+                    )
+                } else {
+                    color
+                };
                 d.draw_rectangle_lines_ex(
                     Rectangle::new(sx as f32, sy as f32, sw as f32, sh as f32),
-                    if is_selected { 3.0 } else { 1.0 }, border_color,
+                    if is_selected { 3.0 } else { 1.0 },
+                    border_color,
                 );
                 let name = ACCESSORY_NAMES[slot.0 as usize];
-                let name_size = 12;
+                let name_size = 14;
                 let name_w = d.measure_text(name, name_size);
-                d.draw_text(name, sx + sw / 2 - name_w / 2, sy + sh / 2 - name_size / 2, name_size, color);
+                d.draw_text(
+                    name,
+                    sx + sw / 2 - name_w / 2,
+                    sy + sh / 2 - name_size / 2,
+                    name_size,
+                    color,
+                );
             } else {
                 d.draw_rectangle(sx, sy, sw, sh, Color::new(16, 16, 24, 180));
                 d.draw_rectangle_lines_ex(
                     Rectangle::new(sx as f32, sy as f32, sw as f32, sh as f32),
-                    1.0, Color::new(50, 50, 60, 150),
+                    1.0,
+                    Color::new(50, 50, 60, 150),
                 );
-                let ew = d.measure_text("EMPTY", 11);
-                d.draw_text("EMPTY", sx + sw / 2 - ew / 2, sy + sh / 2 - 5, 11, Color::new(60, 60, 70, 200));
+                let ew = d.measure_text("EMPTY", 13);
+                d.draw_text(
+                    "EMPTY",
+                    sx + sw / 2 - ew / 2,
+                    sy + sh / 2 - 6,
+                    13,
+                    Color::new(60, 60, 70, 200),
+                );
             }
         }
     }
 
     fn draw_palette(&self, d: &mut RaylibDrawHandle, theme: &Theme, ly: &Layout) {
-        let has_sel = self.selected_slot.map(|s| self.equipped[s].0 != ACCESSORY_NONE).unwrap_or(false);
-        let label_color = if has_sel { theme.item_color } else { Color::new(80, 80, 90, 200) };
-        d.draw_text("ITEM COLOR", ly.palette_x, ly.palette_y, 14, label_color);
+        let has_sel = self
+            .selected_slot
+            .map(|s| self.equipped[s].0 != ACCESSORY_NONE)
+            .unwrap_or(false);
+        let label_color = if has_sel {
+            theme.item_color
+        } else {
+            Color::new(80, 80, 90, 200)
+        };
+        d.draw_text("ITEM COLOR", ly.palette_x, ly.palette_y, 16, label_color);
 
         for i in 0..ACCENT_PALETTE.len() {
             let (px, py, ps) = ly.palette_swatch(i);
@@ -554,8 +728,14 @@ impl CustomizeEditor {
             d.draw_rectangle(px, py, ps, ps, Color::new(r, g, b, alpha));
             if i == self.color_sel && has_sel {
                 d.draw_rectangle_lines_ex(
-                    Rectangle::new((px - 2) as f32, (py - 2) as f32, (ps + 4) as f32, (ps + 4) as f32),
-                    2.0, theme.item_hover_color,
+                    Rectangle::new(
+                        (px - 2) as f32,
+                        (py - 2) as f32,
+                        (ps + 4) as f32,
+                        (ps + 4) as f32,
+                    ),
+                    2.0,
+                    theme.item_hover_color,
                 );
             }
         }
@@ -589,10 +769,10 @@ impl Layout {
         let preview_w = PREVIEW_TEX_W as i32;
         let preview_3d_h = PREVIEW_TEX_H as i32;
         let preview_h = preview_3d_h + 40;
-        let item_w = 88;
-        let item_h = 40;
-        let item_gap = 6;
-        let gap = 30;
+        let item_w = 110;
+        let item_h = 50;
+        let item_gap = 8;
+        let gap = 40;
         let cols = 4;
         let right_w = cols * item_w + (cols - 1) * item_gap;
 
@@ -600,17 +780,17 @@ impl Layout {
         let base_x = (w - total_w) / 2;
 
         // Right panel heights
-        let name_h = 70; // label + box + generous gap below
-        let cat_label = 22;
+        let name_h = 90;
+        let cat_label = 24;
         let cat_rows = 2 * (item_h + item_gap) - item_gap;
         let cat_total = cat_label + cat_rows;
-        let eq_gap = 10;
-        let eq_label = 20;
-        let eq_slot_h = 40;
+        let eq_gap = 24;
+        let eq_label = 22;
+        let eq_slot_h = 48;
         let eq_total = eq_label + eq_slot_h;
-        let pal_gap = 10;
+        let pal_gap = 24;
         let pal_label = 18;
-        let pal_swatch = 22;
+        let pal_swatch = 26;
         let pal_total = pal_label + pal_swatch;
         let right_total = name_h + cat_total + eq_gap + eq_total + pal_gap + pal_total;
 
@@ -629,7 +809,7 @@ impl Layout {
 
         // Name box at top of right panel
         let name_box_y = content_y + 18;
-        let name_box = (catalog_x, name_box_y, right_w.min(280), 32);
+        let name_box = (catalog_x, name_box_y, right_w.min(360), 36);
 
         // Catalog below name (with generous gap)
         let catalog_y = content_y + name_h + cat_label;
@@ -671,9 +851,9 @@ impl Layout {
     }
 
     fn equipped_slot(&self, index: usize) -> (i32, i32, i32, i32) {
-        let sw = 105;
-        let sh = 40;
-        let gap = 10;
+        let sw = 140;
+        let sh = 48;
+        let gap = 12;
         (
             self.equipped_x + index as i32 * (sw + gap),
             self.equipped_y + 20,
@@ -683,8 +863,8 @@ impl Layout {
     }
 
     fn palette_swatch(&self, index: usize) -> (i32, i32, i32) {
-        let ps = 22;
-        let gap = 5;
+        let ps = 26;
+        let gap = 6;
         (
             self.palette_x + index as i32 * (ps + gap),
             self.palette_y + 18,

@@ -299,7 +299,18 @@ impl Menu {
         let mut sel = self.settings_sel;
 
         nav_keys(rl, &mut sel, count);
-        mouse_hover(rl, &mut sel, count, h, self.theme());
+        mouse_hover(rl, &mut sel, count - 1, h, self.theme()); // only Theme+Volume
+        // Back button hover (rendered above swatches, not at item_y)
+        {
+            let mx = rl.get_mouse_x();
+            let my = rl.get_mouse_y();
+            let back_y = h - 116;
+            if mx >= w / 2 - 80 && mx <= w / 2 + 80
+                && my >= back_y - 4 && my <= back_y + 28 + 4
+            {
+                sel = 2;
+            }
+        }
         self.settings_sel = sel;
 
         let speed = self.theme().hover_slide_speed;
@@ -366,9 +377,9 @@ impl Menu {
         }
 
         if confirm_pressed(rl) && SETTINGS_ITEMS[sel] == SettingsItem::Back {
-            let (px, py) = self.item_center(sel, w, h);
+            let back_y = h - 116;
             let c = self.theme().selector_color;
-            self.fx.explode(px, py, c);
+            self.fx.explode(w as f32 / 2.0, back_y as f32 + 14.0, c);
             self.screen = Screen::Main;
             self.prev_sel = None;
             self.hover_offsets = [0.0; 5];
@@ -406,7 +417,7 @@ impl Menu {
 
     // ── Drawing ──────────────────────────────────────────────────────────────
 
-    pub fn draw(&self, d: &mut RaylibDrawHandle) {
+    pub fn draw(&mut self, d: &mut RaylibDrawHandle) {
         let w = d.get_screen_width();
         let h = d.get_screen_height();
         let th = self.theme();
@@ -420,8 +431,9 @@ impl Menu {
             Screen::JoinInput => self.draw_join_input(d, w, h),
             Screen::Settings => self.draw_settings(d, w, h),
             Screen::Customize => {
-                if let Some(ref editor) = self.customize_editor {
-                    editor.draw(d, self.theme(), w, h);
+                let theme = &self.themes[self.theme_index];
+                if let Some(ref mut editor) = self.customize_editor {
+                    editor.draw(d, theme, w, h);
                 }
             }
         }
@@ -597,11 +609,16 @@ impl Menu {
                 }
                 SettingsItem::Back => {
                     let label = "BACK";
-                    let label_w = d.measure_text(label, th.item_size);
+                    let back_size = 28;
+                    let back_y = h - 116;
+                    let label_w = d.measure_text(label, back_size);
                     let label_x = w / 2 - label_w / 2 + slide;
-                    d.draw_text(label, label_x, item_y, th.item_size, color);
+                    d.draw_text(label, label_x, back_y, back_size, color);
                     if is_selected {
-                        draw_selector(d, label_x, item_y, th, self.time);
+                        let bar_x = label_x - th.selector_gap - th.selector_width;
+                        let bar_pulse = ((self.time * th.pulse_speed * 1.5).sin() * 40.0 + 215.0) as u8;
+                        let bar_color = Color::new(th.selector_color.r, th.selector_color.g, th.selector_color.b, bar_pulse);
+                        d.draw_rectangle(bar_x, back_y, th.selector_width, back_size, bar_color);
                     }
                 }
             }

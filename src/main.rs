@@ -12,7 +12,7 @@ use game::server::GameServer;
 use game::state::GameState;
 use game::world::World;
 use lobby::client::LobbyClient;
-use lobby::screen::{draw_lobby, draw_settings_panel, lobby_input, LobbyInput, LobbySettingsState};
+use lobby::screen::{draw_lobby, lobby_input, LobbyInput, LobbySettingsState};
 use lobby::server::LobbyServer;
 use lobby::state::{LobbyColor, PlayerSlot};
 use menu::menu::{Menu, MenuAction};
@@ -216,10 +216,8 @@ fn main() {
                                 theme,
                                 lobby_time,
                                 &menu.fx,
+                                &lobby_settings,
                             );
-                            if lobby_settings.open {
-                                draw_settings_panel(&mut d, &server.state.settings, &lobby_settings, theme, true);
-                            }
                         }
                     }
                     LobbyRole::Client(client) => {
@@ -303,10 +301,8 @@ fn main() {
                                 theme,
                                 lobby_time,
                                 &menu.fx,
+                                &lobby_settings,
                             );
-                            if lobby_settings.open {
-                                draw_settings_panel(&mut d, &client.state.settings, &lobby_settings, theme, false);
-                            }
                         }
                     }
                 }

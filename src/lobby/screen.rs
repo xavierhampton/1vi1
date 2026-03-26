@@ -179,6 +179,7 @@ pub fn draw_lobby(
     theme: &Theme,
     time: f32,
     particles: &MenuParticles,
+    settings_state: &LobbySettingsState,
 ) {
     let w = d.get_screen_width();
     let h = d.get_screen_height();
@@ -239,31 +240,40 @@ pub fn draw_lobby(
         theme.accent_color,
     );
 
-    // Host address (below accent)
-    let mut slots_top = line_y + theme.accent_height + 20;
+    // Host address (fixed under title)
+    let mut addr_bottom = line_y + theme.accent_height;
     if is_host {
         let addr_text = format!("IP: {}", host_addr);
         let addr_size = 20;
         let addr_w = d.measure_text(&addr_text, addr_size);
+        let addr_y = addr_bottom + 8;
         d.draw_text(
             &addr_text,
             w / 2 - addr_w / 2,
-            slots_top,
+            addr_y,
             addr_size,
             theme.subtitle_color,
         );
         let _ = addr_w;
-        slots_top += addr_size + 12;
+        addr_bottom = addr_y + addr_size;
     }
 
-    // Player slots
-    let slot_start_y = slots_top;
+    // Two-column layout: players (left) + settings (right)
     let slot_height = 70;
+    let panel_h = 4 * (slot_height + 10) - 10; // 310
+
+    // Center columns between addr/title area and back button
+    let back_y_area = h - 90 - 20;
+    let available = back_y_area - addr_bottom;
+    let slot_start_y = addr_bottom + (available - panel_h).max(0) / 2;
     let slot_width = 420;
+    let col_gap = 30;
+    let total_col_w = slot_width + col_gap + slot_width;
+    let col_base_x = w / 2 - total_col_w / 2;
 
     for i in 0..4 {
         let slot_y = slot_start_y + i as i32 * (slot_height + 10);
-        let slot_x = w / 2 - slot_width / 2;
+        let slot_x = col_base_x;
         let is_me = i == my_index;
 
         if i < state.slots.len() {
@@ -387,6 +397,110 @@ pub fn draw_lobby(
         }
     }
 
+    // ── Settings panel (right column, same size as player slots) ─────────────
+    {
+        let sp_x = col_base_x + slot_width + col_gap;
+        let focused = settings_state.open;
+        let panel_h = 4 * (slot_height + 10) - 10; // match total slots height
+
+        // Background
+        let bg_alpha = if focused { 140u8 } else { 80 };
+        d.draw_rectangle(
+            sp_x, slot_start_y, slot_width, panel_h,
+            Color::new(15, 15, 25, bg_alpha),
+        );
+        let border_color = if focused {
+            Color::new(theme.accent_color.r, theme.accent_color.g, theme.accent_color.b, 120)
+        } else {
+            Color::new(50, 50, 60, 80)
+        };
+        d.draw_rectangle_lines_ex(
+            Rectangle::new(sp_x as f32, slot_start_y as f32, slot_width as f32, panel_h as f32),
+            1.0, border_color,
+        );
+
+        let content_w = 350;
+        let content_x = sp_x + (slot_width - content_w) / 2;
+        let inner_x = content_x;
+        let inner_w = content_w;
+
+        // Header
+        let header = "SETTINGS";
+        let header_size = 18;
+        let header_tw = d.measure_text(header, header_size);
+        let header_y = slot_start_y + 10;
+        let header_color = if focused { theme.item_hover_color } else { theme.item_color };
+        d.draw_text(header, sp_x + slot_width / 2 - header_tw / 2, header_y, header_size, header_color);
+        let hl_y = header_y + header_size + 4;
+        d.draw_rectangle(inner_x, hl_y, inner_w, 1, theme.accent_color);
+
+        // Rows (sized to fill panel)
+        let rows_y = hl_y + 6;
+        let hint_reserve = 22;
+        let row_h = (panel_h - (rows_y - slot_start_y) - hint_reserve) / SETTINGS_COUNT as i32;
+
+        for i in 0..SETTINGS_COUNT {
+            let ry = rows_y + i as i32 * row_h;
+            let is_sel = focused && i == settings_state.selected;
+
+            if is_sel {
+                let ba = ((time * theme.pulse_speed * 1.5).sin() * 15.0 + 30.0) as u8;
+                d.draw_rectangle(
+                    inner_x - 4, ry, inner_w + 8, row_h,
+                    Color::new(theme.selector_color.r, theme.selector_color.g, theme.selector_color.b, ba),
+                );
+                let bp = ((time * theme.pulse_speed * 1.5).sin() * 40.0 + 215.0) as u8;
+                d.draw_rectangle(
+                    inner_x, ry + 3, 3, row_h - 6,
+                    Color::new(theme.selector_color.r, theme.selector_color.g, theme.selector_color.b, bp),
+                );
+            }
+
+            let label = setting_label(i);
+            let ls = 16;
+            let lc = if is_sel { theme.item_hover_color } else { theme.item_color };
+            d.draw_text(label, inner_x + 12, ry + (row_h - ls) / 2, ls, lc);
+
+            let value = setting_value(&state.settings, i);
+            let vs = 16;
+            let vtw = d.measure_text(&value, vs);
+            let vy = ry + (row_h - vs) / 2;
+            let vc = if !is_default_value(&state.settings, i) {
+                theme.selector_color
+            } else {
+                Color::new(theme.item_color.r, theme.item_color.g, theme.item_color.b, 200)
+            };
+
+            let va_x = inner_x + inner_w - 130;
+            if is_host && is_sel {
+                d.draw_text("<", va_x, vy, vs, theme.selector_color);
+                let vx = va_x + 16 + (96 - vtw) / 2;
+                d.draw_text(&value, vx, vy, vs, vc);
+                d.draw_text(">", va_x + 112, vy, vs, theme.selector_color);
+            } else {
+                let vx = va_x + 16 + (96 - vtw) / 2;
+                d.draw_text(&value, vx, vy, vs, vc);
+            }
+        }
+
+        // Inline hint
+        let hint_y = rows_y + SETTINGS_COUNT as i32 * row_h + 4;
+        let hint = if focused && is_host {
+            "W/S select  |  A/D adjust"
+        } else if focused {
+            "Host controls settings"
+        } else {
+            "Tab to edit"
+        };
+        let hint_size = 13;
+        let hint_tw = d.measure_text(hint, hint_size);
+        let hint_alpha = if focused && is_host { 255u8 } else { 150 };
+        d.draw_text(
+            hint, sp_x + slot_width / 2 - hint_tw / 2, hint_y, hint_size,
+            Color::new(theme.footer_color.r, theme.footer_color.g, theme.footer_color.b, hint_alpha),
+        );
+    }
+
     // Waiting / All Ready indicator
     let status_y = slot_start_y + 4 * (slot_height + 10) + 10;
     if state.all_ready() {
@@ -436,7 +550,7 @@ pub fn draw_lobby(
     d.draw_text(back_label, back_x, back_y, back_size, back_color);
 
     // Footer
-    let footer = "A/D color  |  Enter ready  |  Tab settings  |  C copy IP";
+    let footer = "A/D color  |  Enter ready  |  Tab settings  |  Esc to leave";
     let footer_size = theme.footer_size;
     let footer_w = d.measure_text(footer, footer_size);
     d.draw_text(
@@ -448,122 +562,3 @@ pub fn draw_lobby(
     );
 }
 
-pub fn draw_settings_panel(
-    d: &mut RaylibDrawHandle,
-    settings: &GameSettings,
-    panel_state: &LobbySettingsState,
-    theme: &Theme,
-    is_host: bool,
-) {
-    let w = d.get_screen_width();
-    let h = d.get_screen_height();
-    let time = panel_state.time;
-
-    // Dim overlay
-    d.draw_rectangle(0, 0, w, h, Color::new(0, 0, 0, 160));
-
-    // Panel dimensions
-    let panel_w = 450;
-    let row_h = 36;
-    let title_h = 50;
-    let footer_h = 30;
-    let padding = 20;
-    let panel_h = title_h + SETTINGS_COUNT as i32 * row_h + footer_h + padding * 2;
-    let panel_x = w / 2 - panel_w / 2;
-    let panel_y = h / 2 - panel_h / 2;
-
-    // Panel background
-    d.draw_rectangle(panel_x, panel_y, panel_w, panel_h, Color::new(15, 15, 25, 240));
-    // Border
-    let border_rect = Rectangle::new(panel_x as f32, panel_y as f32, panel_w as f32, panel_h as f32);
-    d.draw_rectangle_lines_ex(border_rect, 2.0, theme.accent_color);
-
-    // Title
-    let title = "GAME SETTINGS";
-    let title_size = 32;
-    let title_tw = d.measure_text(title, title_size);
-    let title_x = w / 2 - title_tw / 2;
-    let title_y = panel_y + padding;
-    d.draw_text(title, title_x + 2, title_y + 2, title_size, theme.title_shadow_color);
-    d.draw_text(title, title_x, title_y, title_size, theme.title_color);
-
-    // Accent line under title
-    let accent_y = title_y + title_size + 6;
-    let accent_w = title_tw + 30;
-    d.draw_rectangle(w / 2 - accent_w / 2, accent_y, accent_w, 2, theme.accent_color);
-
-    // Setting rows
-    let rows_start_y = accent_y + 14;
-    let label_x = panel_x + padding;
-    let value_area_x = panel_x + panel_w - padding - 160;
-
-    for i in 0..SETTINGS_COUNT {
-        let row_y = rows_start_y + i as i32 * row_h;
-        let is_selected = i == panel_state.selected;
-
-        // Selected row highlight
-        if is_selected {
-            let bg_alpha = ((time * theme.pulse_speed * 1.5).sin() * 15.0 + 30.0) as u8;
-            d.draw_rectangle(
-                panel_x + 4, row_y - 2,
-                panel_w - 8, row_h,
-                Color::new(theme.selector_color.r, theme.selector_color.g, theme.selector_color.b, bg_alpha),
-            );
-            // Selector bar on left
-            let bar_pulse = ((time * theme.pulse_speed * 1.5).sin() * 40.0 + 215.0) as u8;
-            let bar_color = Color::new(
-                theme.selector_color.r,
-                theme.selector_color.g,
-                theme.selector_color.b,
-                bar_pulse,
-            );
-            d.draw_rectangle(panel_x + 8, row_y + 2, 4, row_h - 8, bar_color);
-        }
-
-        // Label
-        let label = setting_label(i);
-        let label_size = 20;
-        let label_color = if is_selected { theme.item_hover_color } else { theme.item_color };
-        d.draw_text(label, label_x + 18, row_y + (row_h - label_size) / 2, label_size, label_color);
-
-        // Value with arrows
-        let value = setting_value(settings, i);
-        let val_size = 20;
-        let val_tw = d.measure_text(&value, val_size);
-        let val_y = row_y + (row_h - val_size) / 2;
-
-        // Color non-default values differently
-        let val_color = if !is_default_value(settings, i) {
-            theme.selector_color
-        } else {
-            Color::new(theme.item_color.r, theme.item_color.g, theme.item_color.b, 200)
-        };
-
-        if is_host && is_selected {
-            let arrow_color = theme.selector_color;
-            d.draw_text("<", value_area_x, val_y, val_size, arrow_color);
-            let val_x = value_area_x + 20 + (120 - val_tw) / 2;
-            d.draw_text(&value, val_x, val_y, val_size, val_color);
-            d.draw_text(">", value_area_x + 140, val_y, val_size, arrow_color);
-        } else {
-            let val_x = value_area_x + 20 + (120 - val_tw) / 2;
-            d.draw_text(&value, val_x, val_y, val_size, val_color);
-        }
-    }
-
-    // Footer
-    let footer = if is_host {
-        "Tab to close  |  Up/Down select  |  Left/Right adjust"
-    } else {
-        "Tab to close  |  Host controls settings"
-    };
-    let footer_size = 14;
-    let footer_tw = d.measure_text(footer, footer_size);
-    d.draw_text(
-        footer,
-        w / 2 - footer_tw / 2,
-        panel_y + panel_h - padding - footer_size + 4,
-        footer_size,
-        theme.footer_color,
-    );
-}
