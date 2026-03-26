@@ -549,9 +549,11 @@ impl World {
             {
                 let aim = self.players[i].aim_dir;
                 let color = self.players[i].color;
+                let size_scale = self.players[i].size.x / 0.6;
+                let head_y = self.players[i].position.y + 1.15 * size_scale;
                 let spawn = Vector3::new(
                     self.players[i].position.x + aim.x * 0.5,
-                    self.players[i].position.y + 1.1 + aim.y * 0.5,
+                    head_y + aim.y * 0.5,
                     self.players[i].position.z,
                 );
                 let stats = self.players[i].stats.clone();
@@ -791,7 +793,9 @@ impl World {
                 self.players[i].doppel_ghost = (old.0, old.1, old.2, old.3);
                 // If the 1s-ago sample had a shot, fire from ghost position
                 if old.4 {
-                    let ghost_pos = Vector3::new(old.0 + old.2 * 0.5, old.1 + 1.1 + old.3 * 0.5, pz);
+                    let ghost_scale = self.players[i].size.x / 0.6;
+                    let ghost_head_y = old.1 + 1.15 * ghost_scale;
+                    let ghost_pos = Vector3::new(old.0 + old.2 * 0.5, ghost_head_y + old.3 * 0.5, pz);
                     let ghost_aim = Vector2::new(old.2, old.3);
                     let color = Color::new(
                         self.players[i].color.r / 2 + 60,
