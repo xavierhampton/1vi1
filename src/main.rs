@@ -89,6 +89,8 @@ fn main() {
     let mut dev_overlay_open = false;
     let mut lobby_settings = LobbySettingsState::new();
     let mut match_over_sel: usize = 0; // 0 = Rematch, 1 = Exit to Menu
+    let mut prev_match_over_sel: usize = 0;
+    let mut prev_lobby_settings_sel: usize = 99;
     let mut rematch_waiting = false;
     let mut client_addr = String::new();
     let mut menu_cooldown: f32 = 0.0;
@@ -133,7 +135,20 @@ fn main() {
                     menu.draw(&mut d);
                     continue;
                 }
-                match menu.update(&mut rl, dt) {
+                let action = menu.update(&mut rl, dt);
+                if menu.hover_changed {
+                    sfx.play_menu_hover();
+                    menu.hover_changed = false;
+                }
+                if menu.select_sound {
+                    sfx.play_menu_select();
+                    menu.select_sound = false;
+                }
+                if menu.back_sound {
+                    sfx.play_menu_back();
+                    menu.back_sound = false;
+                }
+                match action {
                     MenuAction::Host => {
                         sfx.play_menu_select();
                         let name = if menu.player_name.is_empty() { "Player" } else { &menu.player_name };
@@ -375,6 +390,11 @@ fn main() {
                         }
                     }
                 }
+                // Lobby settings hover sound (after input processing)
+                if lobby_settings.selected != prev_lobby_settings_sel {
+                    sfx.play_menu_hover();
+                    prev_lobby_settings_sel = lobby_settings.selected;
+                }
             }
             AppState::InGameHost(game_server) => {
                 let in_match_over = matches!(game_server.world.state, GameState::MatchOver { timer, .. } if timer <= 4.0);
@@ -388,9 +408,14 @@ fn main() {
                     if rl.is_key_pressed(KeyboardKey::KEY_S) || rl.is_key_pressed(KeyboardKey::KEY_DOWN) {
                         match_over_sel = 1;
                     }
+                    if match_over_sel != prev_match_over_sel {
+                        sfx.play_menu_hover();
+                        prev_match_over_sel = match_over_sel;
+                    }
                     let confirm = rl.is_key_pressed(KeyboardKey::KEY_ENTER)
                         || rl.is_mouse_button_pressed(MouseButton::MOUSE_BUTTON_LEFT);
                     if confirm {
+                        sfx.play_menu_select();
                         if match_over_sel == 0 {
                             // Rematch — notify clients, then return to lobby with settings
                             game_server.notify_rematch();
@@ -444,7 +469,8 @@ fn main() {
                     }
 
                     // Play SFX from game events
-                    sfx.play_game_events(&game_server.pending_events);
+                    sfx.play_game_events(&game_server.local_audio_events);
+                    game_server.local_audio_events.clear();
 
                     // State transition sounds
                     let state_tag = game_server.world.state_tag();
@@ -526,9 +552,14 @@ fn main() {
                     if rl.is_key_pressed(KeyboardKey::KEY_S) || rl.is_key_pressed(KeyboardKey::KEY_DOWN) {
                         match_over_sel = 1;
                     }
+                    if match_over_sel != prev_match_over_sel {
+                        sfx.play_menu_hover();
+                        prev_match_over_sel = match_over_sel;
+                    }
                     let confirm = rl.is_key_pressed(KeyboardKey::KEY_ENTER)
                         || rl.is_mouse_button_pressed(MouseButton::MOUSE_BUTTON_LEFT);
                     if confirm {
+                        sfx.play_menu_select();
                         if match_over_sel == 0 {
                             // Rematch — wait for host
                             rematch_waiting = true;

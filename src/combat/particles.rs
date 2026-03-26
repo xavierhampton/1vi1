@@ -109,6 +109,9 @@ pub fn spawn_from_events(
                 spawn_explosion(particles, rng, Vector3::new(*x, *y, *z), Color::new(*r, *g, *b, 255), *radius);
             }
             GameEvent::BulletFired { .. } => {}
+            GameEvent::Jumped { .. } => {}
+            GameEvent::Landed { .. } => {}
+            GameEvent::Dashed { .. } => {}
         }
     }
 }

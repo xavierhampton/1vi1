@@ -81,6 +81,13 @@ pub struct Menu {
     pub dev_mode: bool,
     dev_zero_count: u8,
     dev_zero_timer: f32,
+
+    /// Set to true when the selection changes — main.rs reads and clears this for hover SFX.
+    pub hover_changed: bool,
+    /// Set to true on forward navigation (entering a submenu).
+    pub select_sound: bool,
+    /// Set to true on backward navigation (ESC / back button).
+    pub back_sound: bool,
 }
 
 impl Menu {
@@ -115,6 +122,10 @@ impl Menu {
             dev_mode: false,
             dev_zero_count: 0,
             dev_zero_timer: 0.0,
+
+            hover_changed: false,
+            select_sound: false,
+            back_sound: false,
         }
     }
 
@@ -214,6 +225,7 @@ impl Menu {
                 let (px, py) = self.item_center(sel, w, h);
                 let c = self.theme().selector_color;
                 self.fx.pop(px, py, c);
+                self.hover_changed = true;
             }
             self.prev_sel = Some(sel);
         }
@@ -227,6 +239,7 @@ impl Menu {
                     self.fx.explode(px, py, c);
                     self.screen = Screen::JoinInput;
                     self.ip_input.clear();
+                    self.select_sound = true;
                     MenuAction::None
                 }
                 MainItem::Customize => {
@@ -235,6 +248,7 @@ impl Menu {
                     self.fx.explode(px, py, c);
                     self.customize_editor = Some(CustomizeEditor::new(&self.accessories, self.preview_color, self.player_name.clone()));
                     self.screen = Screen::Customize;
+                    self.select_sound = true;
                     MenuAction::None
                 }
                 MainItem::Settings => {
@@ -245,6 +259,7 @@ impl Menu {
                     self.settings_sel = 0;
                     self.prev_sel = None;
                     self.hover_offsets = [0.0; 7];
+                    self.select_sound = true;
                     MenuAction::None
                 }
                 MainItem::Quit => MenuAction::Quit,
@@ -259,6 +274,7 @@ impl Menu {
 
         if rl.is_key_pressed(KeyboardKey::KEY_ESCAPE) {
             self.screen = Screen::Main;
+            self.back_sound = true;
             return MenuAction::None;
         }
 
@@ -314,6 +330,7 @@ impl Menu {
 
         if clicked_back {
             self.screen = Screen::Main;
+            self.back_sound = true;
             return MenuAction::None;
         }
 
@@ -347,6 +364,7 @@ impl Menu {
                 let (px, py) = self.item_center(sel, w, h);
                 let c = self.theme().selector_color;
                 self.fx.pop(px, py, c);
+                self.hover_changed = true;
             }
             self.prev_sel = Some(sel);
         }
@@ -398,12 +416,14 @@ impl Menu {
             self.prev_sel = None;
             self.hover_offsets = [0.0; 7];
             self.save_settings();
+            self.back_sound = true;
         }
         if rl.is_key_pressed(KeyboardKey::KEY_ESCAPE) {
             self.screen = Screen::Main;
             self.prev_sel = None;
             self.hover_offsets = [0.0; 7];
             self.save_settings();
+            self.back_sound = true;
         }
     }
 
@@ -418,6 +438,7 @@ impl Menu {
                 self.prev_sel = None;
                 self.hover_offsets = [0.0; 7];
                 self.save_settings();
+                self.back_sound = true;
             }
         }
     }

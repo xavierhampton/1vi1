@@ -527,8 +527,19 @@ impl World {
             if self.players[i].bloodthirsty_timer > 0.0 { speed_mult *= 1.5; }
             if self.players[i].slow_timer > 0.0 { speed_mult *= 0.5; }
 
+            let was_grounded = self.players[i].grounded;
+            let prev_vy = self.players[i].velocity.y;
             movement::update_with_speed(&mut self.players[i], &inp, &self.level.platforms, dt, speed_mult, self.game_settings.gravity_scale);
             self.players[i].aim_dir = inp.aim_dir;
+
+            // Detect jump (velocity went from non-positive to jump velocity)
+            if self.players[i].velocity.y > 5.0 && prev_vy <= 0.1 {
+                events.push(GameEvent::Jumped { owner: i as u8 });
+            }
+            // Detect landing (was airborne, now grounded)
+            if !was_grounded && self.players[i].grounded {
+                events.push(GameEvent::Landed { owner: i as u8 });
+            }
 
             // Reload
             let max_ammo = MAX_BULLETS + self.players[i].stats.extra_ammo;
@@ -619,6 +630,14 @@ impl World {
                 self.players[i].shoot_cooldown = cd;
                 did_fire[i] = true;
 
+                // Emit BulletFired event for audio
+                events.push(GameEvent::BulletFired {
+                    x: spawn.x, y: spawn.y, z: spawn.z,
+                    vx: aim.x, vy: aim.y,
+                    owner: i as u8,
+                    r: color.r, g: color.g, b: color.b,
+                });
+
                 if !stats.no_reload && !stats.infinite_ammo && self.players[i].bullets_remaining <= 0 {
                     self.players[i].bullets_remaining = 0;
                     self.players[i].reload_timer = RELOAD_TIME;
@@ -642,6 +661,9 @@ impl World {
                     .map(|(j, (card_id, _))| (j, *card_id))
                     .collect();
                 for (j, card_id) in to_activate {
+                    if card_id == cards::CardId::Dash {
+                        events.push(GameEvent::Dashed { owner: i as u8 });
+                    }
                     let (cd, effect) = cards::activate_ability(card_id, &mut self.players[i]);
                     self.players[i].cards[j].1 = cd;
                     match effect {

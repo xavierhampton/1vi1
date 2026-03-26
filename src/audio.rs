@@ -14,7 +14,7 @@ use crate::game::net::GameEvent;
 // ── File paths (change these to swap sounds) ────────────────────────────────
 
 // Music
-const MUSIC_MENU: &str = "assets/music/menu.ogg";
+const MUSIC_MENU: &str = "assets/sounds/theme.wav";
 
 // SFX — combat
 const SFX_SHOOT: &str = "assets/sounds/shoot.wav";
@@ -294,6 +294,9 @@ impl<'aud> AudioManager<'aud> {
                 GameEvent::PlayerDied { .. } => self.play_death(),
                 GameEvent::TerrainHit { .. } => self.play_terrain_hit(),
                 GameEvent::Explosion { .. } => self.play_explosion(),
+                GameEvent::Jumped { .. } => self.play_jump(),
+                GameEvent::Landed { .. } => self.play_land(),
+                GameEvent::Dashed { .. } => self.play_dash(),
             }
         }
     }

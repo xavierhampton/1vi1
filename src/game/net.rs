@@ -12,6 +12,9 @@ pub enum GameEvent {
     TerrainHit { x: f32, y: f32, z: f32, r: u8, g: u8, b: u8 },
     BulletFired { x: f32, y: f32, z: f32, vx: f32, vy: f32, owner: u8, r: u8, g: u8, b: u8 },
     Explosion { x: f32, y: f32, z: f32, r: u8, g: u8, b: u8, radius: f32 },
+    Jumped { owner: u8 },
+    Landed { owner: u8 },
+    Dashed { owner: u8 },
 }
 
 // ── Snapshot types ───────────────────────────────────────────────────────────
@@ -302,6 +305,18 @@ pub fn encode_snapshot(snap: &WorldSnapshot) -> Vec<u8> {
                 payload.push(*owner);
                 payload.push(*r); payload.push(*g); payload.push(*b);
             }
+            GameEvent::Jumped { owner } => {
+                payload.push(5);
+                payload.push(*owner);
+            }
+            GameEvent::Landed { owner } => {
+                payload.push(6);
+                payload.push(*owner);
+            }
+            GameEvent::Dashed { owner } => {
+                payload.push(7);
+                payload.push(*owner);
+            }
         }
     }
 
@@ -494,6 +509,15 @@ pub fn decode_snapshot(data: &[u8]) -> Option<WorldSnapshot> {
                 let g = read_u8(data, &mut pos);
                 let b = read_u8(data, &mut pos);
                 events.push(GameEvent::BulletFired { x, y, z, vx, vy, owner, r, g, b });
+            }
+            5 | 6 | 7 => {
+                if pos + 1 > data.len() { return None; }
+                let owner = read_u8(data, &mut pos);
+                events.push(match etype {
+                    5 => GameEvent::Jumped { owner },
+                    6 => GameEvent::Landed { owner },
+                    _ => GameEvent::Dashed { owner },
+                });
             }
             _ => {}
         }

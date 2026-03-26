@@ -25,7 +25,9 @@ pub struct GameServer {
     shutdown: Arc<AtomicBool>,
     inputs: Vec<PlayerInput>,
     broadcast_accumulator: f32,
-    pub pending_events: Vec<GameEvent>,
+    pending_events: Vec<GameEvent>,
+    /// Events for local audio playback (not drained by broadcast).
+    pub local_audio_events: Vec<GameEvent>,
     // Maps client_id → player slot index (same logic as lobby)
     client_slot_map: Vec<Option<usize>>,
 }
@@ -57,6 +59,7 @@ impl GameServer {
             inputs,
             broadcast_accumulator: 0.0,
             pending_events: Vec::new(),
+            local_audio_events: Vec::new(),
             client_slot_map,
         }
     }
@@ -181,6 +184,7 @@ impl GameServer {
         // Spawn particles locally on host from events
         spawn_from_events(&game_events, &mut self.world.particles, &mut self.world.rng);
 
+        self.local_audio_events.extend(game_events.iter().cloned());
         self.pending_events.extend(game_events);
 
         // Clear one-shot inputs after physics consumes them
