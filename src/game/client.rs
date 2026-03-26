@@ -18,6 +18,7 @@ use crate::render::cards::card_slot_from_mouse;
 pub struct GameClient {
     pub world: World,
     pub disconnect_message: Option<String>,
+    pub rematch_signal: bool,
     write_stream: TcpStream,
     incoming_rx: Receiver<ServerIncoming>,
     shutdown: Arc<AtomicBool>,
@@ -44,6 +45,7 @@ impl GameClient {
         Self {
             world,
             disconnect_message: None,
+            rematch_signal: false,
             write_stream: parts.write_stream,
             incoming_rx: parts.incoming_rx,
             shutdown: parts.shutdown,
@@ -105,6 +107,9 @@ impl GameClient {
                 }
                 ServerIncoming::Lobby(ServerMsg::PlayerLeft { name }) => {
                     self.disconnect_message = Some(format!("{} Left", name));
+                }
+                ServerIncoming::Lobby(ServerMsg::Rematch) => {
+                    self.rematch_signal = true;
                 }
                 ServerIncoming::Disconnected => {
                     if self.disconnect_message.is_none() {

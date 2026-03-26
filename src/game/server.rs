@@ -25,7 +25,7 @@ pub struct GameServer {
     shutdown: Arc<AtomicBool>,
     inputs: Vec<PlayerInput>,
     broadcast_accumulator: f32,
-    pending_events: Vec<GameEvent>,
+    pub pending_events: Vec<GameEvent>,
     // Maps client_id → player slot index (same logic as lobby)
     client_slot_map: Vec<Option<usize>>,
 }
@@ -205,6 +205,16 @@ impl GameServer {
 
     pub fn notify_leaving(&mut self, name: &str) {
         self.broadcast_player_left(name);
+    }
+
+    pub fn notify_rematch(&mut self) {
+        let msg = protocol::ServerMsg::Rematch;
+        let data = protocol::encode_server(&msg);
+        for stream_opt in self.client_streams.iter_mut() {
+            if let Some(stream) = stream_opt {
+                let _ = stream.write_all(&data);
+            }
+        }
     }
 
     fn broadcast_player_left(&mut self, name: &str) {

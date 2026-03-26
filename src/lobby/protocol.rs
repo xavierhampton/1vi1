@@ -19,6 +19,7 @@ pub enum ServerMsg {
     GameStart,
     PlayerLeft { name: String },
     Disbanded { host_name: String },
+    Rematch,
 }
 
 // Wrapper enums: reader threads decode both lobby and game messages
@@ -124,6 +125,9 @@ pub fn encode_server(msg: &ServerMsg) -> Vec<u8> {
             let bytes = host_name.as_bytes();
             payload.push(bytes.len() as u8);
             payload.extend_from_slice(bytes);
+        }
+        ServerMsg::Rematch => {
+            payload.push(0x86);
         }
     }
     let len = payload.len() as u16;
@@ -238,6 +242,7 @@ pub fn decode_server_incoming(buf: &[u8]) -> Option<(ServerIncoming, usize)> {
             let name = String::from_utf8_lossy(&data[2..2 + name_len]).to_string();
             ServerIncoming::Lobby(ServerMsg::Disbanded { host_name: name })
         }
+        0x86 => ServerIncoming::Lobby(ServerMsg::Rematch),
         // Game message
         0x90 => {
             let snap = net::decode_snapshot(&data[1..])?;

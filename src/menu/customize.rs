@@ -28,6 +28,7 @@ const ACCENT_PALETTE: [(u8, u8, u8); 10] = [
 
 pub type Equipped = [(u8, u8, u8, u8); MAX_EQUIPPED]; // (id, r, g, b)
 
+#[allow(dead_code)]
 pub fn empty_equipped() -> Equipped {
     [(ACCESSORY_NONE, 255, 255, 255); MAX_EQUIPPED]
 }

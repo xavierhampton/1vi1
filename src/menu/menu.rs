@@ -1,7 +1,8 @@
 use raylib::prelude::*;
 
-use super::customize::{self, CustomizeEditor, Equipped};
+use super::customize::{CustomizeEditor, Equipped};
 use super::particles::MenuParticles;
+use super::settings::UserSettings;
 use super::theme::{all_themes, Theme, THEME_COUNT};
 
 // ── Menu screens ─────────────────────────────────────────────────────────────
@@ -26,13 +27,17 @@ const MAIN_ITEMS: &[MainItem] = &[MainItem::Host, MainItem::Join, MainItem::Cust
 
 #[derive(Clone, Copy, PartialEq)]
 enum SettingsItem {
+    MasterVolume,
+    SoundVolume,
+    MusicVolume,
     Theme,
-    Volume,
     Back,
 }
 const SETTINGS_ITEMS: &[SettingsItem] = &[
+    SettingsItem::MasterVolume,
+    SettingsItem::SoundVolume,
+    SettingsItem::MusicVolume,
     SettingsItem::Theme,
-    SettingsItem::Volume,
     SettingsItem::Back,
 ];
 
@@ -48,12 +53,14 @@ pub enum MenuAction {
 pub struct Menu {
     themes: Vec<Theme>,
     pub theme_index: usize,
-    pub volume: f32,
+    pub master_volume: f32,
+    pub sound_volume: f32,
+    pub music_volume: f32,
 
     screen: Screen,
     main_sel: usize,
     settings_sel: usize,
-    hover_offsets: [f32; 5],
+    hover_offsets: [f32; 7],
     prev_sel: Option<usize>,
     time: f32,
     pub fx: MenuParticles,
@@ -67,6 +74,7 @@ pub struct Menu {
 
     // Accessories
     pub accessories: Equipped,
+    pub preview_color: usize,
     customize_editor: Option<CustomizeEditor>,
 
     // Dev mode (triple-press 0)
@@ -77,15 +85,19 @@ pub struct Menu {
 
 impl Menu {
     pub fn new() -> Self {
+        let saved = UserSettings::load();
+        let theme_count = all_themes().len();
         Self {
             themes: all_themes().into(),
-            theme_index: 0,
-            volume: 0.8,
+            theme_index: saved.theme_index.min(theme_count - 1),
+            master_volume: saved.master_volume,
+            sound_volume: saved.sound_volume,
+            music_volume: saved.music_volume,
 
             screen: Screen::Main,
             main_sel: 0,
             settings_sel: 0,
-            hover_offsets: [0.0; 5],
+            hover_offsets: [0.0; 7],
             prev_sel: None,
             time: 0.0,
             fx: MenuParticles::new(),
@@ -94,9 +106,10 @@ impl Menu {
             error_msg: String::new(),
             error_timer: 0.0,
 
-            player_name: String::from("Player"),
+            player_name: saved.player_name,
 
-            accessories: customize::empty_equipped(),
+            accessories: saved.accessories,
+            preview_color: saved.preview_color,
             customize_editor: None,
 
             dev_mode: false,
@@ -107,6 +120,19 @@ impl Menu {
 
     pub fn theme(&self) -> &Theme {
         &self.themes[self.theme_index]
+    }
+
+    fn save_settings(&self) {
+        let s = UserSettings {
+            theme_index: self.theme_index,
+            master_volume: self.master_volume,
+            sound_volume: self.sound_volume,
+            music_volume: self.music_volume,
+            player_name: self.player_name.clone(),
+            preview_color: self.preview_color,
+            accessories: self.accessories,
+        };
+        s.save();
     }
 
     pub fn show_error(&mut self, msg: &str) {
@@ -207,7 +233,7 @@ impl Menu {
                     let (px, py) = self.item_center(sel, w, h);
                     let c = self.theme().selector_color;
                     self.fx.explode(px, py, c);
-                    self.customize_editor = Some(CustomizeEditor::new(&self.accessories, 0, self.player_name.clone()));
+                    self.customize_editor = Some(CustomizeEditor::new(&self.accessories, self.preview_color, self.player_name.clone()));
                     self.screen = Screen::Customize;
                     MenuAction::None
                 }
@@ -218,7 +244,7 @@ impl Menu {
                     self.screen = Screen::Settings;
                     self.settings_sel = 0;
                     self.prev_sel = None;
-                    self.hover_offsets = [0.0; 5];
+                    self.hover_offsets = [0.0; 7];
                     MenuAction::None
                 }
                 MainItem::Quit => MenuAction::Quit,
@@ -299,7 +325,7 @@ impl Menu {
         let mut sel = self.settings_sel;
 
         nav_keys(rl, &mut sel, count);
-        mouse_hover(rl, &mut sel, count - 1, h, self.theme()); // only Theme+Volume
+        mouse_hover(rl, &mut sel, count - 1, h, self.theme()); // items above Back
         // Back button hover (rendered above swatches, not at item_y)
         {
             let mx = rl.get_mouse_x();
@@ -308,7 +334,7 @@ impl Menu {
             if mx >= w / 2 - 80 && mx <= w / 2 + 80
                 && my >= back_y - 4 && my <= back_y + 28 + 4
             {
-                sel = 2;
+                sel = count - 1;
             }
         }
         self.settings_sel = sel;
@@ -326,6 +352,21 @@ impl Menu {
         }
 
         match SETTINGS_ITEMS[sel] {
+            SettingsItem::MasterVolume => {
+                let mut v = self.master_volume;
+                volume_input(rl, &mut v, self.item_y(sel, h), self.theme().item_size, w);
+                self.master_volume = v;
+            }
+            SettingsItem::SoundVolume => {
+                let mut v = self.sound_volume;
+                volume_input(rl, &mut v, self.item_y(sel, h), self.theme().item_size, w);
+                self.sound_volume = v;
+            }
+            SettingsItem::MusicVolume => {
+                let mut v = self.music_volume;
+                volume_input(rl, &mut v, self.item_y(sel, h), self.theme().item_size, w);
+                self.music_volume = v;
+            }
             SettingsItem::Theme => {
                 let changed = if rl.is_key_pressed(KeyboardKey::KEY_RIGHT)
                     || rl.is_key_pressed(KeyboardKey::KEY_D)
@@ -346,33 +387,6 @@ impl Menu {
                     self.fx.explode(px, py, c);
                 }
             }
-            SettingsItem::Volume => {
-                if rl.is_key_pressed(KeyboardKey::KEY_RIGHT)
-                    || rl.is_key_pressed(KeyboardKey::KEY_D)
-                {
-                    self.volume = (self.volume + 0.1).min(1.0);
-                }
-                if rl.is_key_pressed(KeyboardKey::KEY_LEFT)
-                    || rl.is_key_pressed(KeyboardKey::KEY_A)
-                {
-                    self.volume = (self.volume - 0.1).max(0.0);
-                }
-                if rl.is_mouse_button_down(MouseButton::MOUSE_BUTTON_LEFT) {
-                    let bar_w = 200;
-                    let bar_x = w / 2 + 60;
-                    let item_size = self.theme().item_size;
-                    let item_y = self.item_y(sel, h);
-                    let mx = rl.get_mouse_x();
-                    let my = rl.get_mouse_y();
-                    if my >= item_y - 5
-                        && my <= item_y + item_size + 5
-                        && mx >= bar_x
-                        && mx <= bar_x + bar_w
-                    {
-                        self.volume = ((mx - bar_x) as f32 / bar_w as f32).clamp(0.0, 1.0);
-                    }
-                }
-            }
             SettingsItem::Back => {}
         }
 
@@ -382,12 +396,14 @@ impl Menu {
             self.fx.explode(w as f32 / 2.0, back_y as f32 + 14.0, c);
             self.screen = Screen::Main;
             self.prev_sel = None;
-            self.hover_offsets = [0.0; 5];
+            self.hover_offsets = [0.0; 7];
+            self.save_settings();
         }
         if rl.is_key_pressed(KeyboardKey::KEY_ESCAPE) {
             self.screen = Screen::Main;
             self.prev_sel = None;
-            self.hover_offsets = [0.0; 5];
+            self.hover_offsets = [0.0; 7];
+            self.save_settings();
         }
     }
 
@@ -396,10 +412,12 @@ impl Menu {
             if editor.update(rl, dt, w, h) {
                 self.accessories = editor.equipped;
                 self.player_name = editor.name.clone();
+                self.preview_color = editor.preview_color;
                 self.customize_editor = None;
                 self.screen = Screen::Main;
                 self.prev_sel = None;
-                self.hover_offsets = [0.0; 5];
+                self.hover_offsets = [0.0; 7];
+                self.save_settings();
             }
         }
     }
@@ -555,6 +573,9 @@ impl Menu {
         let line_y = title_y + title_size + 10;
         d.draw_rectangle(w / 2 - line_w / 2, line_y, line_w, th.accent_height, th.accent_color);
 
+        let volumes = [self.master_volume, self.sound_volume, self.music_volume];
+        let vol_labels = ["MASTER", "SOUND", "MUSIC"];
+
         for (i, item) in SETTINGS_ITEMS.iter().enumerate() {
             let is_selected = i == self.settings_sel;
             let item_y = self.item_y(i, h);
@@ -563,6 +584,35 @@ impl Menu {
             let color = if is_selected { th.item_hover_color } else { th.item_color };
 
             match item {
+                SettingsItem::MasterVolume | SettingsItem::SoundVolume | SettingsItem::MusicVolume => {
+                    let vol_idx = i; // 0=Master, 1=Sound, 2=Music
+                    let label = vol_labels[vol_idx];
+                    let label_w = d.measure_text(label, th.item_size);
+                    let label_x = w / 2 - label_w - 30 + slide;
+                    d.draw_text(label, label_x, item_y, th.item_size, color);
+                    if is_selected {
+                        draw_selector(d, label_x, item_y, th, self.time);
+                    }
+                    let bar_x = w / 2 + 60;
+                    let bar_w = 200;
+                    let bar_h = 8;
+                    let bar_y = item_y + th.item_size / 2 - bar_h / 2;
+                    let vol = volumes[vol_idx];
+                    let fill_w = (bar_w as f32 * vol) as i32;
+                    d.draw_rectangle(bar_x, bar_y, bar_w, bar_h, Color::new(40, 40, 50, 200));
+                    d.draw_rectangle(bar_x, bar_y, fill_w, bar_h, th.selector_color);
+                    let knob_x = bar_x + fill_w;
+                    let knob_r = 10;
+                    d.draw_rectangle(
+                        knob_x - knob_r / 2,
+                        bar_y - (knob_r - bar_h) / 2,
+                        knob_r,
+                        knob_r,
+                        th.item_hover_color,
+                    );
+                    let pct = format!("{}%", (vol * 100.0) as i32);
+                    d.draw_text(&pct, bar_x + bar_w + 16, item_y, th.item_size, color);
+                }
                 SettingsItem::Theme => {
                     let label = "THEME";
                     let label_w = d.measure_text(label, th.item_size);
@@ -579,33 +629,6 @@ impl Menu {
                     d.draw_text(&name, name_x, item_y, th.item_size, th.selector_color);
                     let name_w = d.measure_text(&name, th.item_size);
                     d.draw_text(">", name_x + name_w + 10, item_y, th.item_size, arrow_color);
-                }
-                SettingsItem::Volume => {
-                    let label = "VOLUME";
-                    let label_w = d.measure_text(label, th.item_size);
-                    let label_x = w / 2 - label_w - 30 + slide;
-                    d.draw_text(label, label_x, item_y, th.item_size, color);
-                    if is_selected {
-                        draw_selector(d, label_x, item_y, th, self.time);
-                    }
-                    let bar_x = w / 2 + 60;
-                    let bar_w = 200;
-                    let bar_h = 8;
-                    let bar_y = item_y + th.item_size / 2 - bar_h / 2;
-                    let fill_w = (bar_w as f32 * self.volume) as i32;
-                    d.draw_rectangle(bar_x, bar_y, bar_w, bar_h, Color::new(40, 40, 50, 200));
-                    d.draw_rectangle(bar_x, bar_y, fill_w, bar_h, th.selector_color);
-                    let knob_x = bar_x + fill_w;
-                    let knob_r = 10;
-                    d.draw_rectangle(
-                        knob_x - knob_r / 2,
-                        bar_y - (knob_r - bar_h) / 2,
-                        knob_r,
-                        knob_r,
-                        th.item_hover_color,
-                    );
-                    let pct = format!("{}%", (self.volume * 100.0) as i32);
-                    d.draw_text(&pct, bar_x + bar_w + 16, item_y, th.item_size, color);
                 }
                 SettingsItem::Back => {
                     let label = "BACK";
@@ -701,6 +724,16 @@ impl Menu {
         d.draw_text(text, w / 2 - fw / 2, h - th.footer_size - 20, th.footer_size, th.footer_color);
     }
 
+    /// Draw just the background (bg color + grid + particles) — for loading/transition screens.
+    pub fn draw_bg(&self, d: &mut RaylibDrawHandle) {
+        let w = d.get_screen_width();
+        let h = d.get_screen_height();
+        let th = self.theme();
+        d.clear_background(th.bg);
+        self.draw_grid(d, w, h);
+        self.fx.draw(d);
+    }
+
     fn draw_grid(&self, d: &mut RaylibDrawHandle, w: i32, h: i32) {
         let th = self.theme();
         let spacing = th.bg_grid_spacing;
@@ -760,10 +793,30 @@ fn mouse_hover(rl: &RaylibHandle, sel: &mut usize, count: usize, h: i32, th: &Th
     }
 }
 
-fn animate_offsets(offsets: &mut [f32; 5], dt: f32, selected: usize, count: usize, speed: f32) {
+fn animate_offsets(offsets: &mut [f32; 7], dt: f32, selected: usize, count: usize, speed: f32) {
     for i in 0..count {
         let target = if i == selected { 12.0 } else { 0.0 };
         offsets[i] += (target - offsets[i]) * speed * dt;
+    }
+}
+
+fn volume_input(rl: &RaylibHandle, vol: &mut f32, item_y: i32, item_size: i32, w: i32) {
+    if rl.is_key_pressed(KeyboardKey::KEY_RIGHT) || rl.is_key_pressed(KeyboardKey::KEY_D) {
+        *vol = (*vol + 0.1).min(1.0);
+    }
+    if rl.is_key_pressed(KeyboardKey::KEY_LEFT) || rl.is_key_pressed(KeyboardKey::KEY_A) {
+        *vol = (*vol - 0.1).max(0.0);
+    }
+    if rl.is_mouse_button_down(MouseButton::MOUSE_BUTTON_LEFT) {
+        let bar_w = 200;
+        let bar_x = w / 2 + 60;
+        let mx = rl.get_mouse_x();
+        let my = rl.get_mouse_y();
+        if my >= item_y - 5 && my <= item_y + item_size + 5
+            && mx >= bar_x && mx <= bar_x + bar_w
+        {
+            *vol = ((mx - bar_x) as f32 / bar_w as f32).clamp(0.0, 1.0);
+        }
     }
 }
 

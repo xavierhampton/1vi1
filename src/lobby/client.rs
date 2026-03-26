@@ -76,6 +76,7 @@ impl LobbyClient {
                         self.host_disbanded = Some(host_name);
                     }
                     ServerMsg::PlayerLeft { .. } => {}
+                    ServerMsg::Rematch => {}
                 },
                 ServerIncoming::Snapshot(_) => {} // ignore during lobby
                 ServerIncoming::Disconnected => {

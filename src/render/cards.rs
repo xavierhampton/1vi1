@@ -3,6 +3,7 @@ use raylib::prelude::*;
 use crate::game::cards::CARD_CATALOG;
 use crate::game::state::GameState;
 use crate::game::world::World;
+use crate::menu::theme::Theme;
 
 const CARD_W: f32 = 220.0;
 const CARD_H: f32 = 310.0;
@@ -309,7 +310,7 @@ pub fn draw_match_over(
     screen_w: i32,
     screen_h: i32,
 ) {
-    if let GameState::MatchOver { winner_index, timer } = &world.state {
+    if let GameState::MatchOver { winner_index, .. } = &world.state {
         // Dim overlay
         d.draw_rectangle(0, 0, screen_w, screen_h, Color::new(0, 0, 0, 180));
 
@@ -366,19 +367,53 @@ pub fn draw_match_over(
             }
         }
 
-        // "Press ESC" hint
-        let hint_y = board_y + world.players.len() as i32 * row_h + 20;
-        if *timer <= 2.0 {
-            let hint = "Press ESC to return to lobby";
-            let hint_size = 20;
-            let hint_w = d.measure_text(hint, hint_size);
-            d.draw_text(
-                hint,
-                screen_w / 2 - hint_w / 2,
-                hint_y,
-                hint_size,
-                Color::new(150, 150, 150, 180),
+    }
+}
+
+pub fn draw_match_over_buttons(
+    d: &mut RaylibDrawHandle,
+    screen_w: i32,
+    screen_h: i32,
+    selected: usize,
+    waiting: bool,
+    theme: &Theme,
+    time: f32,
+) {
+    let labels = if waiting {
+        ["Waiting on Host...", "EXIT TO MENU"]
+    } else {
+        ["REMATCH", "EXIT TO MENU"]
+    };
+    let btn_size = 28;
+    let btn_gap = 40;
+    let base_y = screen_h - 100;
+
+    for (i, label) in labels.iter().enumerate() {
+        let y = base_y + i as i32 * btn_gap;
+        let tw = d.measure_text(label, btn_size);
+        let x = screen_w / 2 - tw / 2;
+        let is_sel = i == selected && !(waiting && i == 0);
+
+        let color = if waiting && i == 0 {
+            Color::new(150, 150, 150, 180)
+        } else if is_sel {
+            theme.item_hover_color
+        } else {
+            theme.item_color
+        };
+
+        if is_sel {
+            let bar_x = x - theme.selector_gap - theme.selector_width;
+            let bar_pulse = ((time * theme.pulse_speed * 1.5).sin() * 40.0 + 215.0) as u8;
+            let bar_color = Color::new(
+                theme.selector_color.r,
+                theme.selector_color.g,
+                theme.selector_color.b,
+                bar_pulse,
             );
+            d.draw_rectangle(bar_x, y, theme.selector_width, btn_size, bar_color);
         }
+
+        d.draw_text(label, x, y, btn_size, color);
     }
 }

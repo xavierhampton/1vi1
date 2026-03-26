@@ -59,6 +59,7 @@ pub struct World {
     pub healing_zones: Vec<HealingZone>,
     pub echo_queue: Vec<(f32, Bullet)>, // (delay_remaining, bullet_to_spawn)
     pub game_settings: GameSettings,
+    pub latest_events: Vec<GameEvent>, // last frame's events for audio
 }
 
 impl World {
@@ -99,6 +100,7 @@ impl World {
             healing_zones: Vec::new(),
             echo_queue: Vec::new(),
             game_settings: settings,
+            latest_events: Vec::new(),
         }
     }
 
@@ -997,6 +999,16 @@ impl World {
         }
     }
 
+    pub fn state_tag(&self) -> u8 {
+        match &self.state {
+            GameState::RoundStart { .. } => 0,
+            GameState::Playing => 1,
+            GameState::RoundEnd { .. } => 2,
+            GameState::CardPick { .. } => 3,
+            GameState::MatchOver { .. } => 4,
+        }
+    }
+
     // ── Snapshot generation (server) ─────────────────────────────────────────
 
     pub fn to_snapshot(&self, events: Vec<GameEvent>) -> WorldSnapshot {
@@ -1223,5 +1235,6 @@ impl World {
         }
 
         spawn_from_events(&snap.events, &mut self.particles, &mut self.rng);
+        self.latest_events = snap.events.clone();
     }
 }

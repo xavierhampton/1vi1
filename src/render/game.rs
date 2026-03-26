@@ -9,6 +9,13 @@ use crate::render::cards::{self as render_cards, CardPickAnim};
 use crate::render::crt::CrtFilter;
 use crate::render::hud;
 
+pub struct MatchOverButtons<'a> {
+    pub selected: usize,
+    pub waiting: bool,
+    pub theme: &'a Theme,
+    pub time: f32,
+}
+
 pub fn draw_world(
     rl: &mut RaylibHandle,
     thread: &RaylibThread,
@@ -22,6 +29,7 @@ pub fn draw_world(
     card_anim: &CardPickAnim,
     local_player: u8,
     dev_overlay: bool,
+    match_over_btns: Option<&MatchOverButtons>,
 ) {
     // Compute screen shake offset from local player
     let (shake_x, shake_y) = if let Some(local_p) = world.players.get(local_player as usize) {
@@ -441,6 +449,9 @@ pub fn draw_world(
 
         if matches!(world.state, GameState::MatchOver { .. }) {
             render_cards::draw_match_over(&mut d, world, render_w, render_h);
+            if let Some(btns) = match_over_btns {
+                render_cards::draw_match_over_buttons(&mut d, render_w, render_h, btns.selected, btns.waiting, btns.theme, btns.time);
+            }
         }
 
         if dev_overlay {

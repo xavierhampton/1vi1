@@ -1,3 +1,4 @@
+mod audio;
 mod combat;
 mod game;
 mod level;
@@ -7,6 +8,7 @@ mod physics;
 mod player;
 mod render;
 
+use audio::AudioManager;
 use game::client::GameClient;
 use game::server::GameServer;
 use game::state::GameState;
@@ -14,8 +16,9 @@ use game::world::World;
 use lobby::client::LobbyClient;
 use lobby::screen::{draw_lobby, lobby_input, LobbyInput, LobbySettingsState};
 use lobby::server::LobbyServer;
-use lobby::state::{LobbyColor, PlayerSlot};
+use lobby::state::{GameSettings, LobbyColor, PlayerSlot};
 use menu::menu::{Menu, MenuAction};
+use raylib::core::audio::RaylibAudio;
 use raylib::prelude::*;
 use render::cards::CardPickAnim;
 use render::crt::CrtFilter;
@@ -23,6 +26,23 @@ use render::crt::CrtFilter;
 const SCREEN_WIDTH: i32 = 960;
 const SCREEN_HEIGHT: i32 = 540;
 const DEFAULT_PORT: u16 = 7878;
+
+fn match_over_mouse_hover(rl: &RaylibHandle, sel: &mut usize, screen_w: i32, screen_h: i32) {
+    let mx = rl.get_mouse_x();
+    let my = rl.get_mouse_y();
+    let btn_size = 28;
+    let btn_gap = 40;
+    let base_y = screen_h - 100;
+    let hit_w = 200;
+    for i in 0..2 {
+        let y = base_y + i as i32 * btn_gap;
+        if mx >= screen_w / 2 - hit_w / 2 && mx <= screen_w / 2 + hit_w / 2
+            && my >= y - 4 && my <= y + btn_size + 4
+        {
+            *sel = i;
+        }
+    }
+}
 
 enum LobbyRole {
     Host(LobbyServer),
@@ -34,7 +54,8 @@ enum AppState {
     Lobby(LobbyRole),
     InGameHost(GameServer),
     InGameClient(GameClient),
-    ReturnToLobby { name: String, dev_mode: bool, accessories: Vec<(u8, u8, u8, u8)> },
+    ReturnToLobby { name: String, dev_mode: bool, accessories: Vec<(u8, u8, u8, u8)>, settings: Option<GameSettings>, timer: f32, retries: u8 },
+    Reconnecting { addr: String, name: String, accessories: Vec<(u8, u8, u8, u8)>, timer: f32, retries: u8 },
 }
 
 fn main() {
@@ -51,15 +72,28 @@ fn main() {
     let mut render_w = SCREEN_WIDTH;
     let mut render_h = SCREEN_HEIGHT;
     let mut menu = Menu::new();
+    let audio = RaylibAudio::init_audio_device().expect("audio init");
+    let mut sfx = AudioManager::new(&audio, menu.master_volume, menu.sound_volume, menu.music_volume);
+    sfx.start_menu_music();
+
     let mut app_state = AppState::Menu;
     let mut game_time: f32 = 0.0;
     let mut lobby_time: f32 = 0.0;
     let mut card_anim = CardPickAnim::new();
     let mut dev_overlay_open = false;
     let mut lobby_settings = LobbySettingsState::new();
+    let mut match_over_sel: usize = 0; // 0 = Rematch, 1 = Exit to Menu
+    let mut rematch_waiting = false;
+    let mut client_addr = String::new();
+    let mut menu_cooldown: f32 = 0.0;
+    let mut prev_game_state_tag: u8 = 0; // track state transitions for sound cues
+    let mut prev_countdown: i32 = 99;
+    let mut prev_card_chosen: bool = false;
+    let mut prev_card_hover: u8 = 0xFF;
 
     while !rl.window_should_close() {
         let dt = rl.get_frame_time();
+        sfx.update();
 
         if rl.is_key_pressed(KeyboardKey::KEY_F11) {
             rl.toggle_fullscreen();
@@ -77,8 +111,25 @@ fn main() {
 
         match &mut app_state {
             AppState::Menu => {
+                // Ensure menu music is playing and volumes are synced
+                if !sfx.is_music_playing() {
+                    sfx.start_menu_music();
+                }
+                sfx.master_volume = menu.master_volume;
+                sfx.sound_volume = menu.sound_volume;
+                sfx.music_volume = menu.music_volume;
+                sfx.apply_volumes();
+
+                if menu_cooldown > 0.0 {
+                    menu_cooldown -= dt;
+                    menu.render_customize_preview(&mut rl, &thread);
+                    let mut d = rl.begin_drawing(&thread);
+                    menu.draw(&mut d);
+                    continue;
+                }
                 match menu.update(&mut rl, dt) {
                     MenuAction::Host => {
+                        sfx.play_menu_select();
                         let name = if menu.player_name.is_empty() { "Player" } else { &menu.player_name };
                         let acc = menu.accessories.iter().filter(|a| a.0 != 0xFF).cloned().collect();
                         match LobbyServer::start(name, DEFAULT_PORT, acc) {
@@ -95,11 +146,13 @@ fn main() {
                         }
                     }
                     MenuAction::Join(addr) => {
+                        sfx.play_menu_select();
                         let name = if menu.player_name.is_empty() { "Player" } else { &menu.player_name };
                         let acc = menu.accessories.iter().filter(|a| a.0 != 0xFF).cloned().collect();
                         match LobbyClient::connect(&addr, name, acc) {
                             Ok(client) => {
                                 lobby_time = 0.0;
+                                client_addr = addr.clone();
                                 next_state = Some(AppState::Lobby(LobbyRole::Client(client)));
                             }
                             Err(e) => {
@@ -165,9 +218,11 @@ fn main() {
                                 server.host_change_color(next);
                             }
                             LobbyInput::ToggleReady => {
+                                sfx.play_ready();
                                 server.host_toggle_ready();
                             }
                             LobbyInput::Leave => {
+                                sfx.play_menu_back();
                                 server.disband();
                                 next_state = Some(AppState::Menu);
                             }
@@ -179,6 +234,9 @@ fn main() {
 
                         let game_start = server.update();
                         if game_start {
+                            sfx.stop_menu_music();
+                            prev_game_state_tag = 0;
+                            prev_countdown = 99;
                             // In dev mode solo, add a dummy player to the lobby
                             let lobby_state = if server.dev_mode && server.state.slots.len() == 1 {
                                 let mut s = server.state.clone();
@@ -255,9 +313,11 @@ fn main() {
                                 }
                             }
                             LobbyInput::ToggleReady => {
+                                sfx.play_ready();
                                 client.toggle_ready();
                             }
                             LobbyInput::Leave => {
+                                sfx.play_menu_back();
                                 next_state = Some(AppState::Menu);
                             }
                             LobbyInput::CopyIP => {}
@@ -279,6 +339,9 @@ fn main() {
                         }
 
                         if client.game_starting {
+                            sfx.stop_menu_music();
+                            prev_game_state_tag = 0;
+                            prev_countdown = 99;
                             let world = World::from_lobby(&client.state);
                             let parts = client.into_game_parts();
                             game_time = 0.0;
@@ -308,19 +371,53 @@ fn main() {
                 }
             }
             AppState::InGameHost(game_server) => {
-                if rl.is_key_pressed(KeyboardKey::KEY_ESCAPE) {
+                let in_match_over = matches!(game_server.world.state, GameState::MatchOver { timer, .. } if timer <= 4.0);
+
+                if in_match_over {
+                    // Match over button navigation
+                    match_over_mouse_hover(&rl, &mut match_over_sel, render_w, render_h);
+                    if rl.is_key_pressed(KeyboardKey::KEY_W) || rl.is_key_pressed(KeyboardKey::KEY_UP) {
+                        match_over_sel = 0;
+                    }
+                    if rl.is_key_pressed(KeyboardKey::KEY_S) || rl.is_key_pressed(KeyboardKey::KEY_DOWN) {
+                        match_over_sel = 1;
+                    }
+                    let confirm = rl.is_key_pressed(KeyboardKey::KEY_ENTER)
+                        || rl.is_mouse_button_pressed(MouseButton::MOUSE_BUTTON_LEFT);
+                    if confirm {
+                        if match_over_sel == 0 {
+                            // Rematch — notify clients, then return to lobby with settings
+                            game_server.notify_rematch();
+                            let name = if menu.player_name.is_empty() { "Player".to_string() } else { menu.player_name.clone() };
+                            let acc: Vec<_> = menu.accessories.iter().filter(|a| a.0 != 0xFF).cloned().collect();
+                            let settings = game_server.world.game_settings.clone();
+                            next_state = Some(AppState::ReturnToLobby { name, dev_mode: menu.dev_mode, accessories: acc, settings: Some(settings), timer: 0.3, retries: 0 });
+                            match_over_sel = 0;
+                        } else {
+                            // Exit to Menu
+                            let name = game_server.world.players[0].name.clone();
+                            game_server.notify_leaving(&name);
+                            next_state = Some(AppState::Menu);
+                            match_over_sel = 0;
+                        }
+                    }
+                    if rl.is_key_pressed(KeyboardKey::KEY_ESCAPE) {
+                        let name = game_server.world.players[0].name.clone();
+                        game_server.notify_leaving(&name);
+                        next_state = Some(AppState::Menu);
+                        match_over_sel = 0;
+                    }
+                } else if rl.is_key_pressed(KeyboardKey::KEY_ESCAPE) {
                     if dev_overlay_open {
                         dev_overlay_open = false;
-                    } else if matches!(game_server.world.state, GameState::MatchOver { .. }) {
-                        let name = if menu.player_name.is_empty() { "Player".to_string() } else { menu.player_name.clone() };
-                        let acc: Vec<_> = menu.accessories.iter().filter(|a| a.0 != 0xFF).cloned().collect();
-                        next_state = Some(AppState::ReturnToLobby { name, dev_mode: menu.dev_mode, accessories: acc });
                     } else {
                         let name = game_server.world.players[0].name.clone();
                         game_server.notify_leaving(&name);
                         next_state = Some(AppState::Menu);
                     }
-                } else {
+                }
+
+                if next_state.is_none() {
                     // Dev mode toggle
                     if menu.dev_mode && rl.is_key_pressed(KeyboardKey::KEY_TAB) {
                         dev_overlay_open = !dev_overlay_open;
@@ -340,6 +437,49 @@ fn main() {
                         game_server.update(&rl, &camera, dt);
                     }
 
+                    // Play SFX from game events
+                    sfx.play_game_events(&game_server.pending_events);
+
+                    // State transition sounds
+                    let state_tag = game_server.world.state_tag();
+                    if state_tag != prev_game_state_tag {
+                        match state_tag {
+                            0 => {} // RoundStart — countdown sounds handled below
+                            1 => sfx.play_round_start(),  // Playing
+                            2 => sfx.play_round_win(),     // RoundEnd
+                            3 => {}                         // CardPick
+                            4 => sfx.play_match_win(),     // MatchOver
+                            _ => {}
+                        }
+                        prev_game_state_tag = state_tag;
+                    }
+
+                    // Countdown tick sounds
+                    if let GameState::RoundStart { timer } = &game_server.world.state {
+                        let tick = timer.ceil() as i32;
+                        if tick != prev_countdown && tick >= 1 && tick <= 3 {
+                            sfx.play_countdown();
+                        }
+                        prev_countdown = tick;
+                    }
+
+                    // Card pick/hover sounds
+                    if let GameState::CardPick { chosen_card, .. } = &game_server.world.state {
+                        let hover = game_server.world.card_hover;
+                        if hover != prev_card_hover && hover < 3 {
+                            sfx.play_card_hover();
+                        }
+                        prev_card_hover = hover;
+                        let is_chosen = chosen_card.is_some();
+                        if is_chosen && !prev_card_chosen {
+                            sfx.play_card_pick();
+                        }
+                        prev_card_chosen = is_chosen;
+                    } else {
+                        prev_card_chosen = false;
+                        prev_card_hover = 0xFF;
+                    }
+
                     if let Some(ref left_name) = game_server.player_left {
                         menu.show_error(&format!("{} Left", left_name));
                         next_state = Some(AppState::Menu);
@@ -347,49 +487,206 @@ fn main() {
 
                     card_anim.update(&game_server.world, dt);
                     let theme = menu.theme();
+                    let btns = if in_match_over {
+                        Some(render::game::MatchOverButtons { selected: match_over_sel, waiting: false, theme, time: game_time })
+                    } else { None };
                     render::game::draw_world(
                         &mut rl, &thread, &mut crt, &game_server.world, camera,
                         render_w, render_h, theme, game_time, &card_anim, 0,
-                        dev_overlay_open,
+                        dev_overlay_open, btns.as_ref(),
                     );
                 }
             }
             AppState::InGameClient(game_client) => {
+                let in_match_over = matches!(game_client.world.state, GameState::MatchOver { timer, .. } if timer <= 4.0);
+
                 if let Some(ref msg) = game_client.disconnect_message {
-                    menu.show_error(msg);
-                    next_state = Some(AppState::Menu);
+                    if rematch_waiting || game_client.rematch_signal {
+                        // Host dropped connection for rematch — reconnect
+                        let name = if menu.player_name.is_empty() { "Player".to_string() } else { menu.player_name.clone() };
+                        let acc: Vec<_> = menu.accessories.iter().filter(|a| a.0 != 0xFF).cloned().collect();
+                        next_state = Some(AppState::Reconnecting { addr: client_addr.clone(), name, accessories: acc, timer: 0.5, retries: 0 });
+                        rematch_waiting = false;
+                    } else {
+                        menu.show_error(msg);
+                        next_state = Some(AppState::Menu);
+                    }
+                } else if in_match_over && !rematch_waiting {
+                    // Match over button navigation
+                    match_over_mouse_hover(&rl, &mut match_over_sel, render_w, render_h);
+                    if rl.is_key_pressed(KeyboardKey::KEY_W) || rl.is_key_pressed(KeyboardKey::KEY_UP) {
+                        match_over_sel = 0;
+                    }
+                    if rl.is_key_pressed(KeyboardKey::KEY_S) || rl.is_key_pressed(KeyboardKey::KEY_DOWN) {
+                        match_over_sel = 1;
+                    }
+                    let confirm = rl.is_key_pressed(KeyboardKey::KEY_ENTER)
+                        || rl.is_mouse_button_pressed(MouseButton::MOUSE_BUTTON_LEFT);
+                    if confirm {
+                        if match_over_sel == 0 {
+                            // Rematch — wait for host
+                            rematch_waiting = true;
+                        } else {
+                            next_state = Some(AppState::Menu);
+                            match_over_sel = 0;
+                        }
+                    }
+                    if rl.is_key_pressed(KeyboardKey::KEY_ESCAPE) {
+                        next_state = Some(AppState::Menu);
+                        match_over_sel = 0;
+                    }
                 } else if rl.is_key_pressed(KeyboardKey::KEY_ESCAPE) {
+                    rematch_waiting = false;
                     next_state = Some(AppState::Menu);
-                } else {
+                    match_over_sel = 0;
+                }
+
+                if next_state.is_none() {
                     game_time += dt;
                     let camera = render::camera::game_camera(&game_client.world);
                     game_client.update(&rl, &camera, dt);
+
+                    // Play SFX from game events (received in snapshot)
+                    sfx.play_game_events(&game_client.world.latest_events);
+                    game_client.world.latest_events.clear();
+
+                    // State transition sounds
+                    let state_tag = game_client.world.state_tag();
+                    if state_tag != prev_game_state_tag {
+                        match state_tag {
+                            0 => {}
+                            1 => sfx.play_round_start(),
+                            2 => sfx.play_round_win(),
+                            3 => {}
+                            4 => sfx.play_match_win(),
+                            _ => {}
+                        }
+                        prev_game_state_tag = state_tag;
+                    }
+
+                    // Countdown tick sounds
+                    if let GameState::RoundStart { timer } = &game_client.world.state {
+                        let tick = timer.ceil() as i32;
+                        if tick != prev_countdown && tick >= 1 && tick <= 3 {
+                            sfx.play_countdown();
+                        }
+                        prev_countdown = tick;
+                    }
+
+                    // Card pick/hover sounds
+                    if let GameState::CardPick { chosen_card, .. } = &game_client.world.state {
+                        let hover = game_client.world.card_hover;
+                        if hover != prev_card_hover && hover < 3 {
+                            sfx.play_card_hover();
+                        }
+                        prev_card_hover = hover;
+                        let is_chosen = chosen_card.is_some();
+                        if is_chosen && !prev_card_chosen {
+                            sfx.play_card_pick();
+                        }
+                        prev_card_chosen = is_chosen;
+                    } else {
+                        prev_card_chosen = false;
+                        prev_card_hover = 0xFF;
+                    }
+
                     card_anim.update(&game_client.world, dt);
                     let theme = menu.theme();
+                    let btns = if in_match_over {
+                        Some(render::game::MatchOverButtons { selected: match_over_sel, waiting: rematch_waiting, theme, time: game_time })
+                    } else { None };
                     render::game::draw_world(
                         &mut rl, &thread, &mut crt, &game_client.world, camera,
                         render_w, render_h, theme, game_time, &card_anim,
-                        game_client.my_index, false,
+                        game_client.my_index, false, btns.as_ref(),
                     );
                 }
             }
-            AppState::ReturnToLobby { .. } => {} // handled below
+            AppState::ReturnToLobby { timer, .. } => {
+                *timer -= dt;
+                let w_now = rl.get_screen_width();
+                let h_now = rl.get_screen_height();
+                let accent = menu.theme().particle_color_primary;
+                menu.fx.update(dt, w_now, h_now, accent);
+                let mut d = rl.begin_drawing(&thread);
+                menu.draw_bg(&mut d);
+            }
+            AppState::Reconnecting { addr, name, accessories, timer, retries } => {
+                *timer -= dt;
+                if *timer <= 0.0 {
+                    let addr_c = addr.clone();
+                    let name_c = name.clone();
+                    let acc_c = accessories.clone();
+                    match LobbyClient::connect(&addr_c, &name_c, acc_c) {
+                        Ok(client) => {
+                            lobby_time = 0.0;
+                            client_addr = addr_c;
+                            next_state = Some(AppState::Lobby(LobbyRole::Client(client)));
+                        }
+                        Err(_) => {
+                            *retries += 1;
+                            if *retries >= 10 {
+                                menu.show_error("Failed to reconnect");
+                                next_state = Some(AppState::Menu);
+                            } else {
+                                *timer = 0.5;
+                            }
+                        }
+                    }
+                }
+                // Draw reconnecting screen with menu background
+                {
+                    let w_now = rl.get_screen_width();
+                    let h_now = rl.get_screen_height();
+                    let accent = menu.theme().particle_color_primary;
+                    menu.fx.update(dt, w_now, h_now, accent);
+                    let theme = menu.theme();
+                    let mut d = rl.begin_drawing(&thread);
+                    menu.draw_bg(&mut d);
+                    let text = "Reconnecting...";
+                    let size = 36;
+                    let tw = d.measure_text(text, size);
+                    d.draw_text(text, render_w / 2 - tw / 2, render_h / 2 - size / 2, size, theme.item_color);
+                }
+                // ESC to cancel
+                if rl.is_key_pressed(KeyboardKey::KEY_ESCAPE) {
+                    next_state = Some(AppState::Menu);
+                }
+            }
         }
 
-        // Handle deferred lobby creation (port is now free after old state dropped)
-        if let AppState::ReturnToLobby { ref name, dev_mode, ref accessories } = app_state {
-            let name = name.clone();
-            let acc = accessories.clone();
-            if let Ok(mut server) = LobbyServer::start(&name, DEFAULT_PORT, acc) {
-                server.dev_mode = dev_mode;
-                lobby_time = 0.0;
-                app_state = AppState::Lobby(LobbyRole::Host(server));
-            } else {
-                app_state = AppState::Menu;
+        // Handle deferred lobby creation (wait for port to free up after GameServer drop)
+        if let AppState::ReturnToLobby { ref name, dev_mode, ref accessories, ref settings, ref mut timer, ref mut retries } = app_state {
+            if *timer <= 0.0 {
+                let name = name.clone();
+                let acc = accessories.clone();
+                let saved_settings = settings.clone();
+                match LobbyServer::start(&name, DEFAULT_PORT, acc) {
+                    Ok(mut server) => {
+                        server.dev_mode = dev_mode;
+                        if let Some(s) = saved_settings {
+                            server.state.settings = s;
+                        }
+                        lobby_time = 0.0;
+                        app_state = AppState::Lobby(LobbyRole::Host(server));
+                    }
+                    Err(_) => {
+                        *retries += 1;
+                        if *retries >= 10 {
+                            menu_cooldown = 0.1;
+                            app_state = AppState::Menu;
+                        } else {
+                            *timer = 0.2;
+                        }
+                    }
+                }
             }
         }
 
         if let Some(new_state) = next_state {
+            if matches!(new_state, AppState::Menu) {
+                menu_cooldown = 0.1;
+            }
             app_state = new_state;
         }
     }
