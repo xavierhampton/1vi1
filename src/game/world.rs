@@ -81,6 +81,7 @@ impl World {
             );
             p.hp = starting_hp;
             p.max_hp = starting_hp;
+            p.accessories = slot.accessories.clone();
             p
         }).collect();
 

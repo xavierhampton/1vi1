@@ -208,11 +208,11 @@ pub fn draw_lobby(
         }
     }
 
-    // Title
+    // Title (matches settings screen style)
     let title = "LOBBY";
     let title_size = 60;
     let title_w = d.measure_text(title, title_size);
-    let title_y = 30;
+    let title_y = (h as f32 * 0.12) as i32;
     d.draw_text(
         title,
         w / 2 - title_w / 2 + 3,
@@ -228,23 +228,9 @@ pub fn draw_lobby(
         theme.title_color,
     );
 
-    // Host address
-    if is_host {
-        let addr_text = format!("IP: {}", host_addr);
-        let addr_size = 20;
-        let addr_w = d.measure_text(&addr_text, addr_size);
-        d.draw_text(
-            &addr_text,
-            w / 2 - addr_w / 2,
-            title_y + title_size + 8,
-            addr_size,
-            theme.subtitle_color,
-        );
-    }
-
     // Accent line
-    let line_y = title_y + title_size + 35;
-    let line_w = 400;
+    let line_w = title_w + 40;
+    let line_y = title_y + title_size + 10;
     d.draw_rectangle(
         w / 2 - line_w / 2,
         line_y,
@@ -253,8 +239,25 @@ pub fn draw_lobby(
         theme.accent_color,
     );
 
+    // Host address (below accent)
+    let mut slots_top = line_y + theme.accent_height + 20;
+    if is_host {
+        let addr_text = format!("IP: {}", host_addr);
+        let addr_size = 20;
+        let addr_w = d.measure_text(&addr_text, addr_size);
+        d.draw_text(
+            &addr_text,
+            w / 2 - addr_w / 2,
+            slots_top,
+            addr_size,
+            theme.subtitle_color,
+        );
+        let _ = addr_w;
+        slots_top += addr_size + 12;
+    }
+
     // Player slots
-    let slot_start_y = line_y + 30;
+    let slot_start_y = slots_top;
     let slot_height = 70;
     let slot_width = 420;
 
@@ -439,7 +442,7 @@ pub fn draw_lobby(
     d.draw_text(
         footer,
         w / 2 - footer_w / 2,
-        h - footer_size - 12,
+        h - footer_size - 20,
         footer_size,
         theme.footer_color,
     );

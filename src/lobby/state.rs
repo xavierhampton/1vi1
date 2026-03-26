@@ -74,6 +74,7 @@ pub struct PlayerSlot {
     pub color: LobbyColor,
     pub ready: bool,
     pub is_host: bool,
+    pub accessories: Vec<(u8, u8, u8, u8)>, // up to 3: (id, r, g, b)
 }
 
 #[derive(Clone, Debug)]
@@ -83,13 +84,14 @@ pub struct LobbyState {
 }
 
 impl LobbyState {
-    pub fn new_host(name: &str) -> Self {
+    pub fn new_host(name: &str, accessories: Vec<(u8, u8, u8, u8)>) -> Self {
         Self {
             slots: vec![PlayerSlot {
                 name: name.to_string(),
                 color: LobbyColor::Blue,
                 ready: false,
                 is_host: true,
+                accessories,
             }],
             settings: GameSettings::default(),
         }

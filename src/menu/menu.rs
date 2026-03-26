@@ -1,5 +1,6 @@
 use raylib::prelude::*;
 
+use super::customize::{self, CustomizeEditor, Equipped};
 use super::particles::MenuParticles;
 use super::theme::{all_themes, Theme, THEME_COUNT};
 
@@ -10,26 +11,26 @@ enum Screen {
     Main,
     JoinInput,
     Settings,
+    Customize,
 }
 
 #[derive(Clone, Copy, PartialEq)]
 enum MainItem {
     Host,
     Join,
+    Customize,
     Settings,
     Quit,
 }
-const MAIN_ITEMS: &[MainItem] = &[MainItem::Host, MainItem::Join, MainItem::Settings, MainItem::Quit];
+const MAIN_ITEMS: &[MainItem] = &[MainItem::Host, MainItem::Join, MainItem::Customize, MainItem::Settings, MainItem::Quit];
 
 #[derive(Clone, Copy, PartialEq)]
 enum SettingsItem {
-    Name,
     Theme,
     Volume,
     Back,
 }
 const SETTINGS_ITEMS: &[SettingsItem] = &[
-    SettingsItem::Name,
     SettingsItem::Theme,
     SettingsItem::Volume,
     SettingsItem::Back,
@@ -52,7 +53,7 @@ pub struct Menu {
     screen: Screen,
     main_sel: usize,
     settings_sel: usize,
-    hover_offsets: [f32; 4],
+    hover_offsets: [f32; 5],
     prev_sel: Option<usize>,
     time: f32,
     pub fx: MenuParticles,
@@ -63,6 +64,10 @@ pub struct Menu {
     error_timer: f32,
 
     pub player_name: String,
+
+    // Accessories
+    pub accessories: Equipped,
+    customize_editor: Option<CustomizeEditor>,
 
     // Dev mode (triple-press 0)
     pub dev_mode: bool,
@@ -80,7 +85,7 @@ impl Menu {
             screen: Screen::Main,
             main_sel: 0,
             settings_sel: 0,
-            hover_offsets: [0.0; 4],
+            hover_offsets: [0.0; 5],
             prev_sel: None,
             time: 0.0,
             fx: MenuParticles::new(),
@@ -90,6 +95,9 @@ impl Menu {
             error_timer: 0.0,
 
             player_name: String::from("Player"),
+
+            accessories: customize::empty_equipped(),
+            customize_editor: None,
 
             dev_mode: false,
             dev_zero_count: 0,
@@ -157,6 +165,10 @@ impl Menu {
                 self.update_settings(rl, dt, w, h);
                 MenuAction::None
             }
+            Screen::Customize => {
+                self.update_customize(rl, dt, w, h);
+                MenuAction::None
+            }
         }
     }
 
@@ -191,6 +203,14 @@ impl Menu {
                     self.ip_input.clear();
                     MenuAction::None
                 }
+                MainItem::Customize => {
+                    let (px, py) = self.item_center(sel, w, h);
+                    let c = self.theme().selector_color;
+                    self.fx.explode(px, py, c);
+                    self.customize_editor = Some(CustomizeEditor::new(&self.accessories, 0, self.player_name.clone()));
+                    self.screen = Screen::Customize;
+                    MenuAction::None
+                }
                 MainItem::Settings => {
                     let (px, py) = self.item_center(sel, w, h);
                     let c = self.theme().selector_color;
@@ -198,7 +218,7 @@ impl Menu {
                     self.screen = Screen::Settings;
                     self.settings_sel = 0;
                     self.prev_sel = None;
-                    self.hover_offsets = [0.0; 4];
+                    self.hover_offsets = [0.0; 5];
                     MenuAction::None
                 }
                 MainItem::Quit => MenuAction::Quit,
@@ -278,17 +298,7 @@ impl Menu {
         let count = SETTINGS_ITEMS.len();
         let mut sel = self.settings_sel;
 
-        // Arrow-only nav when editing name (W/S conflict with typing)
-        if SETTINGS_ITEMS[sel] == SettingsItem::Name {
-            if rl.is_key_pressed(KeyboardKey::KEY_DOWN) {
-                sel = (sel + 1) % count;
-            }
-            if rl.is_key_pressed(KeyboardKey::KEY_UP) {
-                sel = (sel + count - 1) % count;
-            }
-        } else {
-            nav_keys(rl, &mut sel, count);
-        }
+        nav_keys(rl, &mut sel, count);
         mouse_hover(rl, &mut sel, count, h, self.theme());
         self.settings_sel = sel;
 
@@ -305,38 +315,6 @@ impl Menu {
         }
 
         match SETTINGS_ITEMS[sel] {
-            SettingsItem::Name => {
-                // Paste
-                if (rl.is_key_down(KeyboardKey::KEY_LEFT_CONTROL) || rl.is_key_down(KeyboardKey::KEY_RIGHT_CONTROL))
-                    && rl.is_key_pressed(KeyboardKey::KEY_V)
-                {
-                    let clip = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                        rl.get_clipboard_text()
-                    }));
-                    if let Ok(Ok(text)) = clip {
-                        for c in text.chars() {
-                            if (c.is_alphanumeric() || c == '_') && self.player_name.len() < 12 {
-                                self.player_name.push(c);
-                            }
-                        }
-                    }
-                }
-                loop {
-                    let ch = rl.get_char_pressed();
-                    match ch {
-                        Some(c) if (c.is_alphanumeric() || c == '_') && self.player_name.len() < 12 => {
-                            self.player_name.push(c);
-                        }
-                        None => break,
-                        _ => {}
-                    }
-                }
-                if (rl.is_key_pressed(KeyboardKey::KEY_BACKSPACE) || rl.is_key_pressed_repeat(KeyboardKey::KEY_BACKSPACE))
-                    && !self.player_name.is_empty()
-                {
-                    self.player_name.pop();
-                }
-            }
             SettingsItem::Theme => {
                 let changed = if rl.is_key_pressed(KeyboardKey::KEY_RIGHT)
                     || rl.is_key_pressed(KeyboardKey::KEY_D)
@@ -393,12 +371,36 @@ impl Menu {
             self.fx.explode(px, py, c);
             self.screen = Screen::Main;
             self.prev_sel = None;
-            self.hover_offsets = [0.0; 4];
+            self.hover_offsets = [0.0; 5];
         }
         if rl.is_key_pressed(KeyboardKey::KEY_ESCAPE) {
             self.screen = Screen::Main;
             self.prev_sel = None;
-            self.hover_offsets = [0.0; 4];
+            self.hover_offsets = [0.0; 5];
+        }
+    }
+
+    fn update_customize(&mut self, rl: &mut RaylibHandle, dt: f32, w: i32, h: i32) {
+        if let Some(ref mut editor) = self.customize_editor {
+            if editor.update(rl, dt, w, h) {
+                self.accessories = editor.equipped;
+                self.player_name = editor.name.clone();
+                self.customize_editor = None;
+                self.screen = Screen::Main;
+                self.prev_sel = None;
+                self.hover_offsets = [0.0; 5];
+            }
+        }
+    }
+
+    /// Render the 3D customize preview to its texture (call before begin_drawing)
+    pub fn render_customize_preview(&mut self, rl: &mut RaylibHandle, thread: &RaylibThread) {
+        if self.screen == Screen::Customize {
+            if let Some(ref mut editor) = self.customize_editor {
+                let w = rl.get_screen_width();
+                let h = rl.get_screen_height();
+                editor.render_preview(rl, thread, w, h);
+            }
         }
     }
 
@@ -417,6 +419,11 @@ impl Menu {
             Screen::Main => self.draw_main(d, w, h),
             Screen::JoinInput => self.draw_join_input(d, w, h),
             Screen::Settings => self.draw_settings(d, w, h),
+            Screen::Customize => {
+                if let Some(ref editor) = self.customize_editor {
+                    editor.draw(d, self.theme(), w, h);
+                }
+            }
         }
     }
 
@@ -424,7 +431,7 @@ impl Menu {
         let th = self.theme();
         self.draw_title(d, w, h);
 
-        let labels = ["HOST", "JOIN", "SETTINGS", "QUIT"];
+        let labels = ["HOST", "JOIN", "CUSTOMIZE", "SETTINGS", "QUIT"];
         for (i, label) in labels.iter().enumerate() {
             self.draw_item(d, label, i, self.main_sel, h, th);
         }
@@ -544,31 +551,6 @@ impl Menu {
             let color = if is_selected { th.item_hover_color } else { th.item_color };
 
             match item {
-                SettingsItem::Name => {
-                    let label = "NAME";
-                    let label_w = d.measure_text(label, th.item_size);
-                    let label_x = w / 2 - label_w - 30 + slide;
-                    d.draw_text(label, label_x, item_y, th.item_size, color);
-                    if is_selected {
-                        draw_selector(d, label_x, item_y, th, self.time);
-                    }
-
-                    let box_x = w / 2 + 30;
-                    let box_w = 300;
-                    let box_h = th.item_size + 10;
-                    let box_y = item_y - 5;
-                    d.draw_rectangle(box_x, box_y, box_w, box_h, Color::new(20, 20, 30, 220));
-                    let border_color = if is_selected { th.selector_color } else { Color::new(60, 60, 70, 200) };
-                    d.draw_rectangle_lines(box_x, box_y, box_w, box_h, border_color);
-
-                    let display = if is_selected {
-                        format!("{}_", self.player_name)
-                    } else {
-                        self.player_name.clone()
-                    };
-                    let text_color = if is_selected { th.item_hover_color } else { th.item_color };
-                    d.draw_text(&display, box_x + 8, item_y, th.item_size, text_color);
-                }
                 SettingsItem::Theme => {
                     let label = "THEME";
                     let label_w = d.measure_text(label, th.item_size);
@@ -761,7 +743,7 @@ fn mouse_hover(rl: &RaylibHandle, sel: &mut usize, count: usize, h: i32, th: &Th
     }
 }
 
-fn animate_offsets(offsets: &mut [f32; 4], dt: f32, selected: usize, count: usize, speed: f32) {
+fn animate_offsets(offsets: &mut [f32; 5], dt: f32, selected: usize, count: usize, speed: f32) {
     for i in 0..count {
         let target = if i == selected { 12.0 } else { 0.0 };
         offsets[i] += (target - offsets[i]) * speed * dt;

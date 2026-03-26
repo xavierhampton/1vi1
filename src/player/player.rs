@@ -41,6 +41,7 @@ pub struct Player {
     pub rewind_sample_timer: f32,
     pub wall_dir: i8, // -1 = wall left, 0 = none, 1 = wall right
     pub invuln_timer: f32, // spawn invulnerability (Smash Bros style)
+    pub accessories: Vec<(u8, u8, u8, u8)>, // up to 3: (id, r, g, b)
 }
 
 impl Player {
@@ -81,6 +82,7 @@ impl Player {
             rewind_sample_timer: 0.0,
             wall_dir: 0,
             invuln_timer: 0.0,
+            accessories: Vec::new(),
         }
     }
 

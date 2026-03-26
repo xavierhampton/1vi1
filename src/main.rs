@@ -34,7 +34,7 @@ enum AppState {
     Lobby(LobbyRole),
     InGameHost(GameServer),
     InGameClient(GameClient),
-    ReturnToLobby { name: String, dev_mode: bool },
+    ReturnToLobby { name: String, dev_mode: bool, accessories: Vec<(u8, u8, u8, u8)> },
 }
 
 fn main() {
@@ -80,7 +80,8 @@ fn main() {
                 match menu.update(&mut rl, dt) {
                     MenuAction::Host => {
                         let name = if menu.player_name.is_empty() { "Player" } else { &menu.player_name };
-                        match LobbyServer::start(name, DEFAULT_PORT) {
+                        let acc = menu.accessories.iter().filter(|a| a.0 != 0xFF).cloned().collect();
+                        match LobbyServer::start(name, DEFAULT_PORT, acc) {
                             Ok(mut server) => {
                                 server.dev_mode = menu.dev_mode;
                                 lobby_time = 0.0;
@@ -95,7 +96,8 @@ fn main() {
                     }
                     MenuAction::Join(addr) => {
                         let name = if menu.player_name.is_empty() { "Player" } else { &menu.player_name };
-                        match LobbyClient::connect(&addr, name) {
+                        let acc = menu.accessories.iter().filter(|a| a.0 != 0xFF).cloned().collect();
+                        match LobbyClient::connect(&addr, name, acc) {
                             Ok(client) => {
                                 lobby_time = 0.0;
                                 next_state = Some(AppState::Lobby(LobbyRole::Client(client)));
@@ -110,6 +112,7 @@ fn main() {
                 }
 
                 if next_state.is_none() {
+                    menu.render_customize_preview(&mut rl, &thread);
                     let mut d = rl.begin_drawing(&thread);
                     menu.draw(&mut d);
                 }
@@ -185,6 +188,7 @@ fn main() {
                                     color: dummy_color,
                                     ready: true,
                                     is_host: false,
+                                    accessories: Vec::new(),
                                 });
                                 s
                             } else {
@@ -313,7 +317,8 @@ fn main() {
                         dev_overlay_open = false;
                     } else if matches!(game_server.world.state, GameState::MatchOver { .. }) {
                         let name = if menu.player_name.is_empty() { "Player".to_string() } else { menu.player_name.clone() };
-                        next_state = Some(AppState::ReturnToLobby { name, dev_mode: menu.dev_mode });
+                        let acc: Vec<_> = menu.accessories.iter().filter(|a| a.0 != 0xFF).cloned().collect();
+                        next_state = Some(AppState::ReturnToLobby { name, dev_mode: menu.dev_mode, accessories: acc });
                     } else {
                         let name = game_server.world.players[0].name.clone();
                         game_server.notify_leaving(&name);
@@ -376,9 +381,10 @@ fn main() {
         }
 
         // Handle deferred lobby creation (port is now free after old state dropped)
-        if let AppState::ReturnToLobby { ref name, dev_mode } = app_state {
+        if let AppState::ReturnToLobby { ref name, dev_mode, ref accessories } = app_state {
             let name = name.clone();
-            if let Ok(mut server) = LobbyServer::start(&name, DEFAULT_PORT) {
+            let acc = accessories.clone();
+            if let Ok(mut server) = LobbyServer::start(&name, DEFAULT_PORT, acc) {
                 server.dev_mode = dev_mode;
                 lobby_time = 0.0;
                 app_state = AppState::Lobby(LobbyRole::Host(server));

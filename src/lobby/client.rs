@@ -21,7 +21,7 @@ pub struct LobbyClient {
 }
 
 impl LobbyClient {
-    pub fn connect(addr: &str, name: &str) -> std::io::Result<Self> {
+    pub fn connect(addr: &str, name: &str, accessories: Vec<(u8, u8, u8, u8)>) -> std::io::Result<Self> {
         let stream = TcpStream::connect_timeout(
             &addr.parse().map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidInput, e))?,
             Duration::from_secs(3),
@@ -49,8 +49,7 @@ impl LobbyClient {
             _reader_handle: reader_handle,
         };
 
-        // Send join message
-        client.send(ClientMsg::Join { name: name.to_string() });
+        client.send(ClientMsg::Join { name: name.to_string(), accessories });
 
         Ok(client)
     }

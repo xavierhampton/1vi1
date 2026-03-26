@@ -6,7 +6,7 @@ use crate::player::input::PlayerInput;
 
 #[derive(Debug)]
 pub enum ClientMsg {
-    Join { name: String },
+    Join { name: String, accessories: Vec<(u8, u8, u8, u8)> },
     ChangeColor { color: u8 },
     ToggleReady,
     Leave,
@@ -44,11 +44,18 @@ pub const REJECT_FULL: u8 = 1;
 pub fn encode_client(msg: &ClientMsg) -> Vec<u8> {
     let mut payload = Vec::new();
     match msg {
-        ClientMsg::Join { name } => {
+        ClientMsg::Join { name, accessories } => {
             payload.push(0x01);
             let bytes = name.as_bytes();
             payload.push(bytes.len() as u8);
             payload.extend_from_slice(bytes);
+            payload.push(accessories.len().min(3) as u8);
+            for &(id, r, g, b) in accessories.iter().take(3) {
+                payload.push(id);
+                payload.push(r);
+                payload.push(g);
+                payload.push(b);
+            }
         }
         ClientMsg::ChangeColor { color } => {
             payload.push(0x02);
@@ -82,6 +89,13 @@ pub fn encode_server(msg: &ServerMsg) -> Vec<u8> {
                 payload.push(slot.color as u8);
                 payload.push(slot.ready as u8);
                 payload.push(slot.is_host as u8);
+                payload.push(slot.accessories.len().min(3) as u8);
+                for &(id, r, g, b) in slot.accessories.iter().take(3) {
+                    payload.push(id);
+                    payload.push(r);
+                    payload.push(g);
+                    payload.push(b);
+                }
             }
             // Game settings
             payload.push(state.settings.wins_to_match as u8);
@@ -140,7 +154,18 @@ pub fn decode_client_incoming(buf: &[u8]) -> Option<(ClientIncoming, usize)> {
             let name_len = data[1] as usize;
             if data.len() < 2 + name_len { return None; }
             let name = String::from_utf8_lossy(&data[2..2 + name_len]).to_string();
-            ClientIncoming::Lobby(ClientMsg::Join { name })
+            let mut pos = 2 + name_len;
+            let mut accessories = Vec::new();
+            if pos < data.len() {
+                let count = data[pos] as usize;
+                pos += 1;
+                for _ in 0..count.min(3) {
+                    if pos + 4 > data.len() { break; }
+                    accessories.push((data[pos], data[pos+1], data[pos+2], data[pos+3]));
+                    pos += 4;
+                }
+            }
+            ClientIncoming::Lobby(ClientMsg::Join { name, accessories })
         }
         0x02 => ClientIncoming::Lobby(ClientMsg::ChangeColor { color: data[1] }),
         0x03 => ClientIncoming::Lobby(ClientMsg::ToggleReady),
@@ -180,7 +205,17 @@ pub fn decode_server_incoming(buf: &[u8]) -> Option<(ServerIncoming, usize)> {
                 let ready = data[pos + 1] != 0;
                 let is_host = data[pos + 2] != 0;
                 pos += 3;
-                slots.push(PlayerSlot { name, color, ready, is_host });
+                let mut accessories = Vec::new();
+                if pos < data.len() {
+                    let acc_count = data[pos] as usize;
+                    pos += 1;
+                    for _ in 0..acc_count.min(3) {
+                        if pos + 4 > data.len() { break; }
+                        accessories.push((data[pos], data[pos+1], data[pos+2], data[pos+3]));
+                        pos += 4;
+                    }
+                }
+                slots.push(PlayerSlot { name, color, ready, is_host, accessories });
             }
             // Decode game settings (with fallback defaults for backwards compat)
             let settings = decode_settings_from_snapshot(data, &mut pos);

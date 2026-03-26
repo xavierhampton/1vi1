@@ -273,6 +273,11 @@ pub fn draw_world(
                 d3.draw_cylinder_ex(arrow_start, shaft_end, 0.03, 0.03, 6, arrow_color);
                 d3.draw_cylinder_ex(shaft_end, tip, 0.1, 0.0, 6, arrow_color);
 
+                // Accessories
+                for &(id, r, g, b) in &player.accessories {
+                    let ac = Color::new(r, g, b, 255);
+                    draw_accessory_3d(&mut d3, id, ac, head_center, body_center, head_r, body_r, size_scale, fwd_x, fwd_z, right_x, right_z);
+                }
             }
 
             // DoppelGanger ghosts (semi-transparent delayed copies)
@@ -540,4 +545,115 @@ pub fn dev_overlay_click(mouse: Vector2, screen_w: i32, screen_h: i32) -> Option
         }
     }
     None
+}
+
+// ── 3D accessory rendering ──────────────────────────────────────────────────
+
+pub fn draw_accessory_3d(
+    d3: &mut RaylibMode3D<'_, RaylibTextureMode<'_, RaylibHandle>>,
+    id: u8, color: Color,
+    head: Vector3, body: Vector3,
+    head_r: f32, body_r: f32, _ss: f32,
+    fwd_x: f32, fwd_z: f32, right_x: f32, right_z: f32,
+) {
+    match id {
+        0 => { // Top Hat
+            let brim_bot = Vector3::new(head.x, head.y + head_r * 0.55, head.z);
+            let brim_top = Vector3::new(head.x, head.y + head_r * 0.65, head.z);
+            d3.draw_cylinder_ex(brim_bot, brim_top, head_r * 1.1, head_r * 1.1, 12, color);
+            let hat_bot = brim_top;
+            let hat_top = Vector3::new(head.x, head.y + head_r * 1.6, head.z);
+            d3.draw_cylinder_ex(hat_bot, hat_top, head_r * 0.7, head_r * 0.65, 12, color);
+        }
+        1 => { // Crown
+            let base_y = head.y + head_r * 0.5;
+            let crown_r = head_r * 0.85;
+            let crown_h = head_r * 0.5;
+            d3.draw_cylinder_ex(
+                Vector3::new(head.x, base_y, head.z),
+                Vector3::new(head.x, base_y + crown_h * 0.3, head.z),
+                crown_r, crown_r, 12, color,
+            );
+            for i in 0..5 {
+                let angle = i as f32 * std::f32::consts::TAU / 5.0;
+                let px = head.x + angle.cos() * crown_r * 0.8;
+                let pz = head.z + angle.sin() * crown_r * 0.8;
+                let bot = Vector3::new(px, base_y + crown_h * 0.2, pz);
+                let top = Vector3::new(px, base_y + crown_h, pz);
+                d3.draw_cylinder_ex(bot, top, head_r * 0.12, 0.0, 4, color);
+            }
+        }
+        2 => { // Halo
+            let halo_y = head.y + head_r * 1.15;
+            let halo_r = head_r * 0.9;
+            for i in 0..16 {
+                let angle = i as f32 * std::f32::consts::TAU / 16.0;
+                let px = head.x + angle.cos() * halo_r;
+                let pz = head.z + angle.sin() * halo_r;
+                d3.draw_sphere(Vector3::new(px, halo_y, pz), head_r * 0.08, color);
+            }
+        }
+        3 => { // Bandana (thick)
+            let band_y = head.y + head_r * 0.15;
+            d3.draw_cylinder_ex(
+                Vector3::new(head.x, band_y - head_r * 0.12, head.z),
+                Vector3::new(head.x, band_y + head_r * 0.12, head.z),
+                head_r * 1.06, head_r * 1.06, 12, color,
+            );
+            let tail_start = Vector3::new(
+                head.x - right_x * head_r, band_y, head.z - right_z * head_r,
+            );
+            let tail_end = Vector3::new(
+                tail_start.x - right_x * head_r * 0.6,
+                band_y - head_r * 0.5,
+                tail_start.z - right_z * head_r * 0.6,
+            );
+            d3.draw_cylinder_ex(tail_start, tail_end, head_r * 0.12, head_r * 0.06, 4, color);
+        }
+        4 => { // Horns
+            let base_y = head.y + head_r * 0.3;
+            let spread = head_r * 0.7;
+            let horn_h = head_r * 0.9;
+            let lb = Vector3::new(head.x - right_x * spread, base_y, head.z - right_z * spread);
+            let lt = Vector3::new(lb.x - right_x * head_r * 0.3, base_y + horn_h, lb.z - right_z * head_r * 0.3);
+            d3.draw_cylinder_ex(lb, lt, head_r * 0.15, 0.0, 6, color);
+            let rb = Vector3::new(head.x + right_x * spread, base_y, head.z + right_z * spread);
+            let rt = Vector3::new(rb.x + right_x * head_r * 0.3, base_y + horn_h, rb.z + right_z * head_r * 0.3);
+            d3.draw_cylinder_ex(rb, rt, head_r * 0.15, 0.0, 6, color);
+        }
+        5 => { // Wings
+            let wing_y = body.y + body_r * 0.2;
+            let wing_span = body_r * 1.2;
+            let wing_h = body_r * 0.7;
+            for i in 0..3 {
+                let t = i as f32 / 2.0;
+                let base = Vector3::new(body.x - right_x * body_r * 0.8, wing_y + t * wing_h * 0.3, body.z - right_z * body_r * 0.8);
+                let tip = Vector3::new(base.x - right_x * wing_span * (1.0 - t * 0.3), wing_y + wing_h * (0.5 - t * 0.3), base.z - right_z * wing_span * (1.0 - t * 0.3));
+                d3.draw_cylinder_ex(base, tip, body_r * 0.06, 0.0, 4, color);
+            }
+            for i in 0..3 {
+                let t = i as f32 / 2.0;
+                let base = Vector3::new(body.x + right_x * body_r * 0.8, wing_y + t * wing_h * 0.3, body.z + right_z * body_r * 0.8);
+                let tip = Vector3::new(base.x + right_x * wing_span * (1.0 - t * 0.3), wing_y + wing_h * (0.5 - t * 0.3), base.z + right_z * wing_span * (1.0 - t * 0.3));
+                d3.draw_cylinder_ex(base, tip, body_r * 0.06, 0.0, 4, color);
+            }
+        }
+        6 => { // Bowtie
+            let bow_y = body.y + body_r * 0.8;
+            let bow_fwd = body_r * 0.9;
+            let bow_center = Vector3::new(body.x + fwd_x * bow_fwd, bow_y, body.z + fwd_z * bow_fwd);
+            d3.draw_sphere(bow_center, body_r * 0.08, color);
+            let ll = Vector3::new(bow_center.x - right_x * body_r * 0.3, bow_y, bow_center.z - right_z * body_r * 0.3);
+            d3.draw_sphere(ll, body_r * 0.15, color);
+            let rl = Vector3::new(bow_center.x + right_x * body_r * 0.3, bow_y, bow_center.z + right_z * body_r * 0.3);
+            d3.draw_sphere(rl, body_r * 0.15, color);
+        }
+        7 => { // Antenna
+            let base = Vector3::new(head.x, head.y + head_r * 0.8, head.z);
+            let top = Vector3::new(head.x, head.y + head_r * 2.0, head.z);
+            d3.draw_cylinder_ex(base, top, head_r * 0.04, head_r * 0.03, 4, color);
+            d3.draw_sphere(top, head_r * 0.15, color);
+        }
+        _ => {}
+    }
 }

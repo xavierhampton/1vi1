@@ -25,7 +25,7 @@ pub struct LobbyServer {
 }
 
 impl LobbyServer {
-    pub fn start(host_name: &str, port: u16) -> std::io::Result<Self> {
+    pub fn start(host_name: &str, port: u16, host_accessories: Vec<(u8, u8, u8, u8)>) -> std::io::Result<Self> {
         let listener = TcpListener::bind(format!("0.0.0.0:{}", port))?;
         let local_addr = listener.local_addr()?.to_string();
         listener.set_nonblocking(true)?;
@@ -61,7 +61,7 @@ impl LobbyServer {
         });
 
         Ok(Self {
-            state: LobbyState::new_host(host_name),
+            state: LobbyState::new_host(host_name, host_accessories),
             my_addr: local_addr,
             dev_mode: false,
             client_streams: Vec::new(),
@@ -101,9 +101,8 @@ impl LobbyServer {
                         ClientIncoming::GameInput(_) | ClientIncoming::CardChoice(_) => continue, // ignore during lobby
                     };
                     match msg {
-                        ClientMsg::Join { name } => {
+                        ClientMsg::Join { name, accessories } => {
                             if self.state.slots.len() >= 4 {
-                                // Reject
                                 if let Some(Some(stream)) = self.client_streams.get_mut(id) {
                                     let _ = stream.write_all(&protocol::encode_server(
                                         &protocol::ServerMsg::Rejected { reason: REJECT_FULL },
@@ -117,6 +116,7 @@ impl LobbyServer {
                                     color,
                                     ready: false,
                                     is_host: false,
+                                    accessories,
                                 });
                                 changed = true;
                             }
