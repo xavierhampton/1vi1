@@ -1,0 +1,852 @@
+[[level]]
+name = "Towers"
+spawn_points = [
+    [
+    11.0,
+    4.0,
+],
+    [
+    -11.0,
+    4.0,
+],
+    [
+    -7.0,
+    7.5,
+],
+    [
+    8.0,
+    7.5,
+],
+]
+
+[[level.platforms]]
+type = "wall"
+min = [
+    -15.0,
+    -1.0,
+]
+max = [
+    15.0,
+    0.0,
+]
+
+[[level.platforms]]
+type = "wall"
+min = [
+    -15.0,
+    0.0,
+]
+max = [
+    -14.0,
+    12.0,
+]
+
+[[level.platforms]]
+type = "wall"
+min = [
+    14.0,
+    0.0,
+]
+max = [
+    15.0,
+    12.0,
+]
+
+[[level.platforms]]
+type = "wall"
+min = [
+    -7.0,
+    0.0,
+]
+max = [
+    -5.5,
+    6.0,
+]
+
+[[level.platforms]]
+type = "wall"
+min = [
+    5.5,
+    0.0,
+]
+max = [
+    7.0,
+    6.0,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    -12.0,
+    2.5,
+]
+max = [
+    -8.0,
+    3.0,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    8.0,
+    2.5,
+]
+max = [
+    12.0,
+    3.0,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    -2.0,
+    4.5,
+]
+max = [
+    2.0,
+    5.0,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    -9.0,
+    6.0,
+]
+max = [
+    -5.5,
+    6.5,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    5.5,
+    6.0,
+]
+max = [
+    9.0,
+    6.5,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    -1.5,
+    8.5,
+]
+max = [
+    1.5,
+    9.0,
+]
+
+[[level]]
+name = "Pit"
+spawn_points = [
+    [
+    11.0,
+    8.5,
+],
+    [
+    -11.0,
+    8.5,
+],
+    [
+    -9.0,
+    5.0,
+],
+    [
+    9.0,
+    5.0,
+],
+]
+
+[[level.platforms]]
+type = "wall"
+min = [
+    -15.0,
+    -1.0,
+]
+max = [
+    -4.0,
+    0.0,
+]
+
+[[level.platforms]]
+type = "wall"
+min = [
+    4.0,
+    -1.0,
+]
+max = [
+    15.0,
+    0.0,
+]
+
+[[level.platforms]]
+type = "wall"
+min = [
+    -15.0,
+    0.0,
+]
+max = [
+    -14.0,
+    12.0,
+]
+
+[[level.platforms]]
+type = "wall"
+min = [
+    14.0,
+    0.0,
+]
+max = [
+    15.0,
+    12.0,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    -1.5,
+    2.0,
+]
+max = [
+    1.5,
+    2.5,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    -10.0,
+    3.5,
+]
+max = [
+    -5.0,
+    4.0,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    5.0,
+    3.5,
+]
+max = [
+    10.0,
+    4.0,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    -3.0,
+    6.5,
+]
+max = [
+    3.0,
+    7.0,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    -12.0,
+    7.0,
+]
+max = [
+    -8.0,
+    7.5,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    8.0,
+    7.0,
+]
+max = [
+    12.0,
+    7.5,
+]
+
+[[level]]
+name = "Scaffold"
+spawn_points = [
+    [
+    -11.0,
+    6.0,
+],
+    [
+    11.0,
+    6.0,
+],
+    [
+    9.0,
+    3.5,
+],
+    [
+    -9.0,
+    3.5,
+],
+]
+
+[[level.platforms]]
+type = "wall"
+min = [
+    -15.0,
+    -1.0,
+]
+max = [
+    15.0,
+    0.0,
+]
+
+[[level.platforms]]
+type = "wall"
+min = [
+    -15.0,
+    0.0,
+]
+max = [
+    -14.0,
+    12.0,
+]
+
+[[level.platforms]]
+type = "wall"
+min = [
+    14.0,
+    0.0,
+]
+max = [
+    15.0,
+    12.0,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    -10.0,
+    2.0,
+]
+max = [
+    -7.0,
+    2.5,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    -1.5,
+    2.0,
+]
+max = [
+    1.5,
+    2.5,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    7.0,
+    2.0,
+]
+max = [
+    10.0,
+    2.5,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    -12.0,
+    4.5,
+]
+max = [
+    -9.0,
+    5.0,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    -5.0,
+    4.5,
+]
+max = [
+    -2.0,
+    5.0,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    2.0,
+    4.5,
+]
+max = [
+    5.0,
+    5.0,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    9.0,
+    4.5,
+]
+max = [
+    12.0,
+    5.0,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    -8.0,
+    7.0,
+]
+max = [
+    -5.0,
+    7.5,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    -1.5,
+    7.5,
+]
+max = [
+    1.5,
+    8.0,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    5.0,
+    7.0,
+]
+max = [
+    8.0,
+    7.5,
+]
+
+[[level]]
+name = "Bunkers"
+spawn_points = [
+    [
+    -10.0,
+    4.0,
+],
+    [
+    10.0,
+    4.0,
+],
+    [
+    3.0,
+    1.0,
+],
+    [
+    -3.0,
+    1.0,
+],
+]
+
+[[level.platforms]]
+type = "wall"
+min = [
+    -15.0,
+    -1.0,
+]
+max = [
+    15.0,
+    0.0,
+]
+
+[[level.platforms]]
+type = "wall"
+min = [
+    -15.0,
+    0.0,
+]
+max = [
+    -14.0,
+    12.0,
+]
+
+[[level.platforms]]
+type = "wall"
+min = [
+    14.0,
+    0.0,
+]
+max = [
+    15.0,
+    12.0,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    -13.0,
+    2.5,
+]
+max = [
+    -7.0,
+    3.0,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    -13.0,
+    6.0,
+]
+max = [
+    -7.5,
+    6.5,
+]
+
+[[level.platforms]]
+type = "wall"
+min = [
+    -7.0,
+    0.0,
+]
+max = [
+    -6.5,
+    5.0,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    7.0,
+    2.5,
+]
+max = [
+    13.0,
+    3.0,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    7.5,
+    6.0,
+]
+max = [
+    13.0,
+    6.5,
+]
+
+[[level.platforms]]
+type = "wall"
+min = [
+    6.5,
+    0.0,
+]
+max = [
+    7.0,
+    5.0,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    -2.5,
+    1.5,
+]
+max = [
+    2.5,
+    2.0,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    -3.0,
+    5.0,
+]
+max = [
+    3.0,
+    5.5,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    -1.5,
+    8.5,
+]
+max = [
+    1.5,
+    9.0,
+]
+
+[[level]]
+name = "Shrug"
+spawn_points = [
+    [
+    -6.0,
+    5.0,
+],
+    [
+    6.0,
+    5.0,
+],
+    [
+    -14.0,
+    11.5,
+],
+    [
+    14.0,
+    11.5,
+],
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    -1.0,
+    -0.5,
+]
+max = [
+    1.0,
+    -0.0,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    2.0,
+    1.5,
+]
+max = [
+    4.0,
+    2.0,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    -4.0,
+    1.5,
+]
+max = [
+    -2.0,
+    2.0,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    5.0,
+    3.5,
+]
+max = [
+    7.0,
+    4.0,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    8.0,
+    5.5,
+]
+max = [
+    10.0,
+    6.0,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    11.0,
+    7.5,
+]
+max = [
+    13.0,
+    8.0,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    -7.0,
+    3.5,
+]
+max = [
+    -5.0,
+    4.0,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    -10.0,
+    5.5,
+]
+max = [
+    -8.0,
+    6.0,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    -13.0,
+    7.5,
+]
+max = [
+    -11.0,
+    8.0,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    -1.0,
+    4.5,
+]
+max = [
+    1.0,
+    5.0,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    -1.0,
+    9.5,
+]
+max = [
+    1.0,
+    10.0,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    4.0,
+    7.5,
+]
+max = [
+    6.0,
+    8.0,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    -6.0,
+    7.5,
+]
+max = [
+    -4.0,
+    8.0,
+]
+
+[[level.platforms]]
+type = "wall"
+min = [
+    -13.0,
+    8.0,
+]
+max = [
+    -12.5,
+    10.0,
+]
+
+[[level.platforms]]
+type = "wall"
+min = [
+    12.5,
+    8.0,
+]
+max = [
+    13.0,
+    10.0,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    12.5,
+    10.0,
+]
+max = [
+    15.0,
+    10.5,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    -15.0,
+    10.0,
+]
+max = [
+    -12.5,
+    10.5,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    1.0,
+    11.5,
+]
+max = [
+    3.0,
+    12.0,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    -3.0,
+    11.5,
+]
+max = [
+    -1.0,
+    12.0,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    -3.0,
+    14.5,
+]
+max = [
+    -1.0,
+    15.0,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    1.0,
+    14.5,
+]
+max = [
+    3.0,
+    15.0,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    -1.0,
+    17.0,
+]
+max = [
+    1.0,
+    17.5,
+]

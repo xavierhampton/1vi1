@@ -9,3 +9,5 @@ path = "src/main.rs"
 
 [dependencies]
 raylib = "5.5"
+serde = { version = "1", features = ["derive"] }
+toml = "0.8"

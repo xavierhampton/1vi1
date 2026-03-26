@@ -1,5 +1,6 @@
 mod audio;
 mod combat;
+mod editor;
 mod game;
 mod level;
 mod lobby;
@@ -59,6 +60,11 @@ enum AppState {
 }
 
 fn main() {
+    let args: Vec<String> = std::env::args().collect();
+    if args.iter().any(|a| a == "--level") {
+        return run_level_editor();
+    }
+
     let (mut rl, thread) = raylib::init()
         .size(SCREEN_WIDTH, SCREEN_HEIGHT)
         .title("1VI1")
@@ -689,5 +695,27 @@ fn main() {
             }
             app_state = new_state;
         }
+    }
+}
+
+fn run_level_editor() {
+    let (mut rl, thread) = raylib::init()
+        .size(1280, 720)
+        .title("1VI1 - Level Editor")
+        .resizable()
+        .build();
+
+    rl.set_target_fps(60);
+    rl.set_exit_key(None);
+
+    let mut ed = editor::Editor::new();
+
+    while !rl.window_should_close() {
+        let dt = rl.get_frame_time();
+        if ed.update(&mut rl, dt) {
+            break;
+        }
+        let mut d = rl.begin_drawing(&thread);
+        ed.draw(&mut d);
     }
 }
