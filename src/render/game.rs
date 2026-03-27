@@ -356,21 +356,67 @@ pub fn draw_world(
                 let fade = (zone.lifetime / 5.0).min(1.0);
                 let pulse = (time * 3.0).sin() * 0.15 + 0.85;
                 let r = 3.0 * pulse;
-                let alpha = (fade * 80.0) as u8;
+                let alpha = (fade * 100.0) as u8;
                 let center = zone.position;
+
+                // Inner glow sphere
                 d3.draw_sphere(center, r * 0.3, Color::new(100, 255, 200, alpha));
                 d3.draw_sphere(center, r * 0.15, Color::new(100, 255, 200, alpha / 2));
+
+                // Thick green ring outline on the ground
+                let ring_alpha = (fade * 220.0) as u8;
+                let ring_color = Color::new(50, 230, 150, ring_alpha);
+                let ring_r = r * 0.95;
+                let segments = 32;
+                let thickness = 0.12;
+                for seg in 0..segments {
+                    let a0 = (seg as f32 / segments as f32) * std::f32::consts::TAU;
+                    let a1 = ((seg + 1) as f32 / segments as f32) * std::f32::consts::TAU;
+                    let p0 = Vector3::new(
+                        center.x + a0.cos() * ring_r,
+                        center.y - 0.3,
+                        center.z + a0.sin() * ring_r,
+                    );
+                    let p1 = Vector3::new(
+                        center.x + a1.cos() * ring_r,
+                        center.y - 0.3,
+                        center.z + a1.sin() * ring_r,
+                    );
+                    d3.draw_cylinder_ex(p0, p1, thickness, thickness, 4, ring_color);
+                }
+
+                // Second smaller ring for depth
+                let inner_ring_r = r * 0.5;
+                let inner_alpha = (fade * 140.0) as u8;
+                let inner_color = Color::new(100, 255, 200, inner_alpha);
+                for seg in 0..segments {
+                    let a0 = (seg as f32 / segments as f32) * std::f32::consts::TAU;
+                    let a1 = ((seg + 1) as f32 / segments as f32) * std::f32::consts::TAU;
+                    let p0 = Vector3::new(
+                        center.x + a0.cos() * inner_ring_r,
+                        center.y - 0.3,
+                        center.z + a0.sin() * inner_ring_r,
+                    );
+                    let p1 = Vector3::new(
+                        center.x + a1.cos() * inner_ring_r,
+                        center.y - 0.3,
+                        center.z + a1.sin() * inner_ring_r,
+                    );
+                    d3.draw_cylinder_ex(p0, p1, thickness * 0.7, thickness * 0.7, 4, inner_color);
+                }
+
                 // Cross marker
-                let cross_r = 0.3;
+                let cross_r = 0.4;
+                let cross_alpha = (fade * 230.0) as u8;
                 d3.draw_cylinder_ex(
                     Vector3::new(center.x - cross_r, center.y, center.z),
                     Vector3::new(center.x + cross_r, center.y, center.z),
-                    0.08, 0.08, 4, Color::new(100, 255, 200, (fade * 200.0) as u8),
+                    0.1, 0.1, 4, Color::new(100, 255, 200, cross_alpha),
                 );
                 d3.draw_cylinder_ex(
                     Vector3::new(center.x, center.y - cross_r, center.z),
                     Vector3::new(center.x, center.y + cross_r, center.z),
-                    0.08, 0.08, 4, Color::new(100, 255, 200, (fade * 200.0) as u8),
+                    0.1, 0.1, 4, Color::new(100, 255, 200, cross_alpha),
                 );
             }
 
@@ -469,7 +515,8 @@ pub fn draw_world(
             draw_dev_overlay(&mut d, render_w, render_h, &held);
         }
 
-        d.draw_fps(10, 10);
+        let fps_text = format!("{} FPS", d.get_fps());
+        d.draw_text(&fps_text, 10, 10, 20, theme.item_color);
     }
 }
 
