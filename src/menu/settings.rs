@@ -5,11 +5,14 @@ use super::customize::{Equipped, ACCESSORY_NONE, MAX_EQUIPPED};
 
 const SETTINGS_FILE: &str = "user_settings.cfg";
 
+pub const FPS_OPTIONS: &[u32] = &[60, 144, 240, 300];
+
 pub struct UserSettings {
     pub theme_index: usize,
     pub master_volume: f32,
     pub sound_volume: f32,
     pub music_volume: f32,
+    pub target_fps: u32,
     pub player_name: String,
     pub preview_color: usize,
     pub accessories: Equipped,
@@ -20,8 +23,9 @@ impl Default for UserSettings {
         Self {
             theme_index: 0,
             master_volume: 0.8,
-            sound_volume: 0.8,
-            music_volume: 0.8,
+            sound_volume: 0.5,
+            music_volume: 0.5,
+            target_fps: 144,
             player_name: "Player".into(),
             preview_color: 0,
             accessories: [(ACCESSORY_NONE, 255, 255, 255); MAX_EQUIPPED],
@@ -80,6 +84,13 @@ impl UserSettings {
                         s.music_volume = v.clamp(0.0, 1.0);
                     }
                 }
+                "target_fps" => {
+                    if let Ok(v) = val.parse::<u32>() {
+                        if FPS_OPTIONS.contains(&v) {
+                            s.target_fps = v;
+                        }
+                    }
+                }
                 "name" => {
                     s.player_name = val.to_string();
                 }
@@ -108,6 +119,7 @@ impl UserSettings {
         out.push_str(&format!("master_volume={:.2}\n", self.master_volume));
         out.push_str(&format!("sound_volume={:.2}\n", self.sound_volume));
         out.push_str(&format!("music_volume={:.2}\n", self.music_volume));
+        out.push_str(&format!("target_fps={}\n", self.target_fps));
         out.push_str(&format!("name={}\n", self.player_name));
         out.push_str(&format!("color={}\n", self.preview_color));
         for (i, acc) in self.accessories.iter().enumerate() {

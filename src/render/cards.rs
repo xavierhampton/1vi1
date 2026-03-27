@@ -384,9 +384,9 @@ pub fn draw_match_over_buttons(
     } else {
         ["REMATCH", "EXIT TO MENU"]
     };
-    let btn_size = 28;
-    let btn_gap = 40;
-    let base_y = screen_h - 100;
+    let btn_size = 36;
+    let btn_gap = 50;
+    let base_y = screen_h - 200;
 
     for (i, label) in labels.iter().enumerate() {
         let y = base_y + i as i32 * btn_gap;

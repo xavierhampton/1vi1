@@ -2,7 +2,7 @@ use raylib::prelude::*;
 
 use super::customize::{CustomizeEditor, Equipped};
 use super::particles::MenuParticles;
-use super::settings::UserSettings;
+use super::settings::{UserSettings, FPS_OPTIONS};
 use super::theme::{all_themes, Theme, THEME_COUNT};
 
 // ── Menu screens ─────────────────────────────────────────────────────────────
@@ -30,6 +30,7 @@ enum SettingsItem {
     MasterVolume,
     SoundVolume,
     MusicVolume,
+    TargetFps,
     Theme,
     Back,
 }
@@ -37,6 +38,7 @@ const SETTINGS_ITEMS: &[SettingsItem] = &[
     SettingsItem::MasterVolume,
     SettingsItem::SoundVolume,
     SettingsItem::MusicVolume,
+    SettingsItem::TargetFps,
     SettingsItem::Theme,
     SettingsItem::Back,
 ];
@@ -56,6 +58,7 @@ pub struct Menu {
     pub master_volume: f32,
     pub sound_volume: f32,
     pub music_volume: f32,
+    pub target_fps: u32,
 
     screen: Screen,
     main_sel: usize,
@@ -100,6 +103,7 @@ impl Menu {
             master_volume: saved.master_volume,
             sound_volume: saved.sound_volume,
             music_volume: saved.music_volume,
+            target_fps: saved.target_fps,
 
             screen: Screen::Main,
             main_sel: 0,
@@ -139,6 +143,7 @@ impl Menu {
             master_volume: self.master_volume,
             sound_volume: self.sound_volume,
             music_volume: self.music_volume,
+            target_fps: self.target_fps,
             player_name: self.player_name.clone(),
             preview_color: self.preview_color,
             accessories: self.accessories,
@@ -384,6 +389,27 @@ impl Menu {
                 let mut v = self.music_volume;
                 volume_input(rl, &mut v, self.item_y(sel, h), self.theme().item_size, w);
                 self.music_volume = v;
+            }
+            SettingsItem::TargetFps => {
+                let idx = FPS_OPTIONS.iter().position(|&f| f == self.target_fps).unwrap_or(1);
+                let changed = if rl.is_key_pressed(KeyboardKey::KEY_RIGHT)
+                    || rl.is_key_pressed(KeyboardKey::KEY_D)
+                {
+                    self.target_fps = FPS_OPTIONS[(idx + 1) % FPS_OPTIONS.len()];
+                    true
+                } else if rl.is_key_pressed(KeyboardKey::KEY_LEFT)
+                    || rl.is_key_pressed(KeyboardKey::KEY_A)
+                {
+                    self.target_fps = FPS_OPTIONS[(idx + FPS_OPTIONS.len() - 1) % FPS_OPTIONS.len()];
+                    true
+                } else {
+                    false
+                };
+                if changed {
+                    let (px, py) = self.item_center(sel, w, h);
+                    let c = self.theme().selector_color;
+                    self.fx.explode(px, py, c);
+                }
             }
             SettingsItem::Theme => {
                 let changed = if rl.is_key_pressed(KeyboardKey::KEY_RIGHT)
@@ -633,6 +659,23 @@ impl Menu {
                     );
                     let pct = format!("{}%", (vol * 100.0) as i32);
                     d.draw_text(&pct, bar_x + bar_w + 16, item_y, th.item_size, color);
+                }
+                SettingsItem::TargetFps => {
+                    let label = "MAX FPS";
+                    let label_w = d.measure_text(label, th.item_size);
+                    let label_x = w / 2 - label_w - 30 + slide;
+                    d.draw_text(label, label_x, item_y, th.item_size, color);
+                    if is_selected {
+                        draw_selector(d, label_x, item_y, th, self.time);
+                    }
+                    let fps_str = format!("{}", self.target_fps);
+                    let val_x = w / 2 + 30;
+                    let arrow_color = if is_selected { th.selector_color } else { th.item_color };
+                    d.draw_text("<", val_x, item_y, th.item_size, arrow_color);
+                    let name_x = val_x + 30;
+                    d.draw_text(&fps_str, name_x, item_y, th.item_size, th.selector_color);
+                    let name_w = d.measure_text(&fps_str, th.item_size);
+                    d.draw_text(">", name_x + name_w + 10, item_y, th.item_size, arrow_color);
                 }
                 SettingsItem::Theme => {
                     let label = "THEME";

@@ -4,11 +4,13 @@ use crate::game::cards::CARD_CATALOG;
 use crate::game::state::GameState;
 use crate::game::world::{World, COUNTDOWN_DURATION, MAX_BULLETS, RELOAD_TIME};
 use crate::level::level::level_name;
+use crate::render::crt::barrel_screen_pos;
 
 pub fn draw_hud(
     d: &mut RaylibDrawHandle, world: &World, camera: Camera3D,
     render_w: i32, render_h: i32, local_player: u8,
 ) {
+    if render_w < 100 || render_h < 100 { return; }
     let mouse = d.get_mouse_position();
 
     // Tooltip to draw last (on top of everything)
@@ -23,8 +25,10 @@ pub fn draw_hud(
             player.position.z,
         );
         let screen_pos = d.get_world_to_screen(above_head, camera);
-        let sx = screen_pos.x as i32;
-        let sy = screen_pos.y as i32;
+        // Barrel-transform to match the distorted player sprite positions
+        let (bx, by) = barrel_screen_pos(screen_pos.x, screen_pos.y, render_w as f32, render_h as f32);
+        let sx = bx as i32;
+        let sy = by as i32;
 
         // Name
         let font_size = 20;

@@ -8,25 +8,19 @@ out vec4 finalColor;
 uniform sampler2D texture0;
 uniform vec4 colDiffuse;
 
-// Same barrel distortion as crt.fs — both layers must match
-vec2 barrel(vec2 uv) {
-    vec2 c = uv - 0.5;
-    float r2 = dot(c, c);
-    return c / (1.0 + r2 * 0.2) + 0.5;
-}
-
+// No barrel distortion — UI stays at exact screen positions
 void main() {
-    vec2 uv = barrel(fragTexCoord);
+    vec2 uv = fragTexCoord;
 
     vec4 texel = texture(texture0, uv);
     vec3 color = texel.rgb;
     float alpha = texel.a;
 
-    // Scanlines (lighter than env pass so players stay readable)
+    // Scanlines (light, matching other passes)
     float scan = smoothstep(0.35, 0.5, fract(uv.y * 300.0));
     color *= 0.85 + 0.15 * scan;
 
-    // Vignette (lighter)
+    // Vignette
     vec2 vig = uv - 0.5;
     float vigAmount = 1.0 - dot(vig, vig) * 1.2;
     color *= clamp(vigAmount, 0.0, 1.0);

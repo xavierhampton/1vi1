@@ -15,6 +15,7 @@ use crate::game::net::GameEvent;
 
 // Music
 const MUSIC_MENU: &str = "assets/sounds/theme.wav";
+const MUSIC_GAME: &str = "assets/sounds/game_music.wav";
 
 // SFX — combat
 const SFX_SHOOT: &str = "assets/sounds/shoot.wav";
@@ -53,7 +54,9 @@ const SFX_READY: &str = "assets/sounds/ready.wav";
 pub struct AudioManager<'aud> {
     // Music
     music_menu: Option<Music<'aud>>,
+    music_game: Option<Music<'aud>>,
     music_playing: bool,
+    game_music_playing: bool,
 
     // SFX — combat
     sfx_shoot: Option<Sound<'aud>>,
@@ -102,15 +105,12 @@ fn try_music<'a>(audio: &'a RaylibAudio, path: &str) -> Option<Music<'a>> {
 
 #[allow(dead_code)]
 impl<'aud> AudioManager<'aud> {
-    pub fn new(
-        audio: &'aud RaylibAudio,
-        master: f32,
-        sound: f32,
-        music: f32,
-    ) -> Self {
+    pub fn new(audio: &'aud RaylibAudio, master: f32, sound: f32, music: f32) -> Self {
         Self {
             music_menu: try_music(audio, MUSIC_MENU),
+            music_game: try_music(audio, MUSIC_GAME),
             music_playing: false,
+            game_music_playing: false,
 
             sfx_shoot: try_sound(audio, SFX_SHOOT),
             sfx_hit: try_sound(audio, SFX_HIT),
@@ -146,11 +146,11 @@ impl<'aud> AudioManager<'aud> {
     // ── Volume helpers ───────────────────────────────────────────────────
 
     fn sfx_vol(&self) -> f32 {
-        self.master_volume * self.sound_volume
+        self.master_volume * self.sound_volume * 0.5
     }
 
     fn mus_vol(&self) -> f32 {
-        self.master_volume * self.music_volume
+        self.master_volume * self.music_volume * 0.10
     }
 
     fn play_sfx(&self, sfx: &Option<Sound>) {
@@ -167,10 +167,18 @@ impl<'aud> AudioManager<'aud> {
                 m.update_stream();
             }
         }
+        if let Some(ref m) = self.music_game {
+            if self.game_music_playing {
+                m.update_stream();
+            }
+        }
     }
 
     pub fn apply_volumes(&self) {
         if let Some(ref m) = self.music_menu {
+            m.set_volume(self.mus_vol());
+        }
+        if let Some(ref m) = self.music_game {
             m.set_volume(self.mus_vol());
         }
     }
@@ -179,7 +187,7 @@ impl<'aud> AudioManager<'aud> {
 
     pub fn start_menu_music(&mut self) {
         if let Some(ref m) = self.music_menu {
-            m.set_volume(self.mus_vol());
+            m.set_volume(self.mus_vol() * 0.3);
             m.play_stream();
             self.music_playing = true;
         }
@@ -194,6 +202,21 @@ impl<'aud> AudioManager<'aud> {
 
     pub fn is_music_playing(&self) -> bool {
         self.music_playing
+    }
+
+    pub fn start_game_music(&mut self) {
+        if let Some(ref m) = self.music_game {
+            m.set_volume(self.mus_vol());
+            m.play_stream();
+            self.game_music_playing = true;
+        }
+    }
+
+    pub fn stop_game_music(&mut self) {
+        if let Some(ref m) = self.music_game {
+            m.stop_stream();
+        }
+        self.game_music_playing = false;
     }
 
     // ── SFX: combat ─────────────────────────────────────────────────────

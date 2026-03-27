@@ -84,10 +84,6 @@ fn load_levels_file() -> LevelsFile {
 
 // ── Public API (unchanged signatures) ───────────────────────────────────────
 
-pub fn map_count() -> u8 {
-    load_levels_file().level.len() as u8
-}
-
 pub fn random_level(rng_val: u64) -> Level {
     let file = load_levels_file();
     let count = file.level.len().max(1);

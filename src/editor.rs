@@ -21,7 +21,6 @@ const SPAWN_COLORS: [Color; 4] = [
     Color::new(80, 220, 80, 255),   // green
     Color::new(255, 220, 60, 255),  // yellow
 ];
-const PREVIEW_COLOR: Color = Color::new(255, 255, 255, 60);
 const SIDEBAR_BG: Color = Color::new(18, 18, 24, 255);
 const SIDEBAR_WIDTH: i32 = 220;
 const TEXT_COLOR: Color = Color::new(220, 220, 230, 255);

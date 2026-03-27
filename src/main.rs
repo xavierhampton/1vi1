@@ -31,10 +31,10 @@ const DEFAULT_PORT: u16 = 7878;
 fn match_over_mouse_hover(rl: &RaylibHandle, sel: &mut usize, screen_w: i32, screen_h: i32) {
     let mx = rl.get_mouse_x();
     let my = rl.get_mouse_y();
-    let btn_size = 28;
-    let btn_gap = 40;
-    let base_y = screen_h - 100;
-    let hit_w = 200;
+    let btn_size = 36;
+    let btn_gap = 50;
+    let base_y = screen_h - 200;
+    let hit_w = 260;
     for i in 0..2 {
         let y = base_y + i as i32 * btn_gap;
         if mx >= screen_w / 2 - hit_w / 2 && mx <= screen_w / 2 + hit_w / 2
@@ -69,15 +69,18 @@ fn main() {
         .size(SCREEN_WIDTH, SCREEN_HEIGHT)
         .title("1VI1")
         .resizable()
+        .log_level(raylib::callbacks::TraceLogLevel::LOG_WARNING)
         .build();
 
-    rl.set_target_fps(144);
+    let mut menu = Menu::new();
+    let state = rl.get_window_state().set_vsync_hint(false);
+    rl.set_window_state(state);
+    rl.set_target_fps(menu.target_fps as u32);
     rl.set_exit_key(None);
 
     let mut crt = CrtFilter::new(&mut rl, &thread, SCREEN_WIDTH, SCREEN_HEIGHT);
     let mut render_w = SCREEN_WIDTH;
     let mut render_h = SCREEN_HEIGHT;
-    let mut menu = Menu::new();
     let audio = RaylibAudio::init_audio_device().expect("audio init");
     let mut sfx = AudioManager::new(&audio, menu.master_volume, menu.sound_volume, menu.music_volume);
     sfx.start_menu_music();
@@ -107,8 +110,8 @@ fn main() {
             rl.toggle_fullscreen();
         }
 
-        let w = rl.get_screen_width();
-        let h = rl.get_screen_height();
+        let w = rl.get_screen_width().max(1);
+        let h = rl.get_screen_height().max(1);
         if w != render_w || h != render_h {
             render_w = w;
             render_h = h;
@@ -127,12 +130,25 @@ fn main() {
                 sfx.sound_volume = menu.sound_volume;
                 sfx.music_volume = menu.music_volume;
                 sfx.apply_volumes();
+                rl.set_target_fps(menu.target_fps as u32);
 
                 if menu_cooldown > 0.0 {
                     menu_cooldown -= dt;
                     menu.render_customize_preview(&mut rl, &thread);
                     let mut d = rl.begin_drawing(&thread);
-                    menu.draw(&mut d);
+                    d.clear_background(Color::BLACK);
+                    {
+                        let mut t = d.begin_texture_mode(&thread, &mut crt.ui_target);
+                        menu.draw(&mut *t);
+                    }
+                    {
+                        let mut s = d.begin_shader_mode(&mut crt.shader_ui);
+                        s.draw_texture_rec(
+                            crt.ui_target.texture(),
+                            Rectangle::new(0.0, 0.0, render_w as f32, -(render_h as f32)),
+                            Vector2::new(0.0, 0.0), Color::WHITE,
+                        );
+                    }
                     continue;
                 }
                 let action = menu.update(&mut rl, dt);
@@ -188,7 +204,19 @@ fn main() {
                 if next_state.is_none() {
                     menu.render_customize_preview(&mut rl, &thread);
                     let mut d = rl.begin_drawing(&thread);
-                    menu.draw(&mut d);
+                    d.clear_background(Color::BLACK);
+                    {
+                        let mut t = d.begin_texture_mode(&thread, &mut crt.ui_target);
+                        menu.draw(&mut *t);
+                    }
+                    {
+                        let mut s = d.begin_shader_mode(&mut crt.shader_ui);
+                        s.draw_texture_rec(
+                            crt.ui_target.texture(),
+                            Rectangle::new(0.0, 0.0, render_w as f32, -(render_h as f32)),
+                            Vector2::new(0.0, 0.0), Color::WHITE,
+                        );
+                    }
                 }
             }
             AppState::Lobby(role) => {
@@ -256,6 +284,7 @@ fn main() {
                         let game_start = server.update();
                         if game_start {
                             sfx.stop_menu_music();
+                            sfx.start_game_music();
                             prev_game_state_tag = 0;
                             prev_countdown = 99;
                             // In dev mode solo, add a dummy player to the lobby
@@ -285,18 +314,30 @@ fn main() {
                         if next_state.is_none() {
                             let theme = menu.theme();
                             let mut d = rl.begin_drawing(&thread);
-                            d.clear_background(theme.bg);
-                            draw_lobby(
-                                &mut d,
-                                &server.state,
-                                0,
-                                true,
-                                &server.my_addr,
-                                theme,
-                                lobby_time,
-                                &menu.fx,
-                                &lobby_settings,
-                            );
+                            d.clear_background(Color::BLACK);
+                            {
+                                let mut t = d.begin_texture_mode(&thread, &mut crt.ui_target);
+                                t.clear_background(theme.bg);
+                                draw_lobby(
+                                    &mut *t,
+                                    &server.state,
+                                    0,
+                                    true,
+                                    &server.my_addr,
+                                    theme,
+                                    lobby_time,
+                                    &menu.fx,
+                                    &lobby_settings,
+                                );
+                            }
+                            {
+                                let mut s = d.begin_shader_mode(&mut crt.shader_ui);
+                                s.draw_texture_rec(
+                                    crt.ui_target.texture(),
+                                    Rectangle::new(0.0, 0.0, render_w as f32, -(render_h as f32)),
+                                    Vector2::new(0.0, 0.0), Color::WHITE,
+                                );
+                            }
                         }
                     }
                     LobbyRole::Client(client) => {
@@ -361,6 +402,7 @@ fn main() {
 
                         if client.game_starting {
                             sfx.stop_menu_music();
+                            sfx.start_game_music();
                             prev_game_state_tag = 0;
                             prev_countdown = 99;
                             let world = World::from_lobby(&client.state);
@@ -375,18 +417,30 @@ fn main() {
                         if next_state.is_none() {
                             let theme = menu.theme();
                             let mut d = rl.begin_drawing(&thread);
-                            d.clear_background(theme.bg);
-                            draw_lobby(
-                                &mut d,
-                                &client.state,
-                                client.my_index as usize,
-                                false,
-                                "",
-                                theme,
-                                lobby_time,
-                                &menu.fx,
-                                &lobby_settings,
-                            );
+                            d.clear_background(Color::BLACK);
+                            {
+                                let mut t = d.begin_texture_mode(&thread, &mut crt.ui_target);
+                                t.clear_background(theme.bg);
+                                draw_lobby(
+                                    &mut *t,
+                                    &client.state,
+                                    client.my_index as usize,
+                                    false,
+                                    "",
+                                    theme,
+                                    lobby_time,
+                                    &menu.fx,
+                                    &lobby_settings,
+                                );
+                            }
+                            {
+                                let mut s = d.begin_shader_mode(&mut crt.shader_ui);
+                                s.draw_texture_rec(
+                                    crt.ui_target.texture(),
+                                    Rectangle::new(0.0, 0.0, render_w as f32, -(render_h as f32)),
+                                    Vector2::new(0.0, 0.0), Color::WHITE,
+                                );
+                            }
                         }
                     }
                 }
@@ -646,7 +700,19 @@ fn main() {
                 let accent = menu.theme().particle_color_primary;
                 menu.fx.update(dt, w_now, h_now, accent);
                 let mut d = rl.begin_drawing(&thread);
-                menu.draw_bg(&mut d);
+                d.clear_background(Color::BLACK);
+                {
+                    let mut t = d.begin_texture_mode(&thread, &mut crt.ui_target);
+                    menu.draw_bg(&mut *t);
+                }
+                {
+                    let mut s = d.begin_shader_mode(&mut crt.shader_ui);
+                    s.draw_texture_rec(
+                        crt.ui_target.texture(),
+                        Rectangle::new(0.0, 0.0, render_w as f32, -(render_h as f32)),
+                        Vector2::new(0.0, 0.0), Color::WHITE,
+                    );
+                }
             }
             AppState::Reconnecting { addr, name, accessories, timer, retries } => {
                 *timer -= dt;
@@ -679,11 +745,23 @@ fn main() {
                     menu.fx.update(dt, w_now, h_now, accent);
                     let theme = menu.theme();
                     let mut d = rl.begin_drawing(&thread);
-                    menu.draw_bg(&mut d);
-                    let text = "Reconnecting...";
-                    let size = 36;
-                    let tw = d.measure_text(text, size);
-                    d.draw_text(text, render_w / 2 - tw / 2, render_h / 2 - size / 2, size, theme.item_color);
+                    d.clear_background(Color::BLACK);
+                    {
+                        let mut t = d.begin_texture_mode(&thread, &mut crt.ui_target);
+                        menu.draw_bg(&mut *t);
+                        let text = "Reconnecting...";
+                        let size = 36;
+                        let tw = t.measure_text(text, size);
+                        t.draw_text(text, render_w / 2 - tw / 2, render_h / 2 - size / 2, size, theme.item_color);
+                    }
+                    {
+                        let mut s = d.begin_shader_mode(&mut crt.shader_ui);
+                        s.draw_texture_rec(
+                            crt.ui_target.texture(),
+                            Rectangle::new(0.0, 0.0, render_w as f32, -(render_h as f32)),
+                            Vector2::new(0.0, 0.0), Color::WHITE,
+                        );
+                    }
                 }
                 // ESC to cancel
                 if rl.is_key_pressed(KeyboardKey::KEY_ESCAPE) {
@@ -722,6 +800,7 @@ fn main() {
 
         if let Some(new_state) = next_state {
             if matches!(new_state, AppState::Menu) {
+                sfx.stop_game_music();
                 menu_cooldown = 0.1;
             }
             app_state = new_state;

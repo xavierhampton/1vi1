@@ -31,6 +31,7 @@ pub fn draw_world(
     dev_overlay: bool,
     match_over_btns: Option<&MatchOverButtons>,
 ) {
+    if render_w < 100 || render_h < 100 { return; }
     // Compute screen shake offset from local player
     let (shake_x, shake_y) = if let Some(local_p) = world.players.get(local_player as usize) {
         if local_p.shake_timer > 0.0 {
@@ -409,51 +410,58 @@ pub fn draw_world(
         let mut d = rl.begin_drawing(thread);
         d.clear_background(Color::BLACK);
 
+        let tex_rect = |t: &RenderTexture2D| -> Rectangle {
+            Rectangle::new(0.0, 0.0, t.texture().width as f32, -(t.texture().height as f32))
+        };
+
+        // Environment pass (CRT + aberration)
         {
             let mut s = d.begin_shader_mode(&mut crt.shader);
             s.draw_texture_rec(
-                crt.env_target.texture(),
-                Rectangle::new(
-                    0.0,
-                    0.0,
-                    crt.env_target.texture().width as f32,
-                    -(crt.env_target.texture().height as f32),
-                ),
-                Vector2::new(0.0, 0.0),
-                Color::WHITE,
+                crt.env_target.texture(), tex_rect(&crt.env_target),
+                Vector2::new(0.0, 0.0), Color::WHITE,
             );
         }
 
+        // Player pass (CRT scanlines, no aberration)
         {
             let mut s = d.begin_shader_mode(&mut crt.shader_no_aberration);
             s.draw_texture_rec(
-                crt.player_target.texture(),
-                Rectangle::new(
-                    0.0,
-                    0.0,
-                    crt.player_target.texture().width as f32,
-                    -(crt.player_target.texture().height as f32),
-                ),
-                Vector2::new(0.0, 0.0),
-                Color::WHITE,
+                crt.player_target.texture(), tex_rect(&crt.player_target),
+                Vector2::new(0.0, 0.0), Color::WHITE,
             );
         }
 
-        // Screen shake is applied via camera offset at the top of draw_world
-
+        // HUD drawn directly to screen — on top of CRT vignette
         hud::draw_hud(&mut d, world, camera, render_w, render_h, local_player);
 
-        if matches!(world.state, GameState::CardPick { .. }) {
-            render_cards::draw_card_pick(&mut d, world, card_anim, render_w, render_h);
-        }
+        // Card pick / match over drawn into ui_target with CRT scanlines
+        if matches!(world.state, GameState::CardPick { .. }) || matches!(world.state, GameState::MatchOver { .. }) {
+            {
+                let mut t = d.begin_texture_mode(thread, &mut crt.ui_target);
+                t.clear_background(Color::new(0, 0, 0, 0));
 
-        if matches!(world.state, GameState::MatchOver { .. }) {
-            render_cards::draw_match_over(&mut d, world, render_w, render_h);
-            if let Some(btns) = match_over_btns {
-                render_cards::draw_match_over_buttons(&mut d, render_w, render_h, btns.selected, btns.waiting, btns.theme, btns.time);
+                if matches!(world.state, GameState::CardPick { .. }) {
+                    render_cards::draw_card_pick(&mut *t, world, card_anim, render_w, render_h);
+                }
+
+                if matches!(world.state, GameState::MatchOver { .. }) {
+                    render_cards::draw_match_over(&mut *t, world, render_w, render_h);
+                    if let Some(btns) = match_over_btns {
+                        render_cards::draw_match_over_buttons(&mut *t, render_w, render_h, btns.selected, btns.waiting, btns.theme, btns.time);
+                    }
+                }
+            }
+            {
+                let mut s = d.begin_shader_mode(&mut crt.shader_ui);
+                s.draw_texture_rec(
+                    crt.ui_target.texture(), tex_rect(&crt.ui_target),
+                    Vector2::new(0.0, 0.0), Color::WHITE,
+                );
             }
         }
 
+        // Dev overlay: NO CRT (user requested)
         if dev_overlay {
             let held: Vec<CardId> = world.players.get(local_player as usize)
                 .map(|p| p.cards.iter().map(|(id, _)| *id).collect())
