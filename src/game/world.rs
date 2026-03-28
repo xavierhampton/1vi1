@@ -60,6 +60,7 @@ pub struct World {
     pub echo_queue: Vec<(f32, Bullet)>, // (delay_remaining, bullet_to_spawn)
     pub game_settings: GameSettings,
     pub latest_events: Vec<GameEvent>, // last frame's events for audio
+    pub elapsed_time: f32,
 }
 
 impl World {
@@ -101,6 +102,7 @@ impl World {
             echo_queue: Vec::new(),
             game_settings: settings,
             latest_events: Vec::new(),
+            elapsed_time: 0.0,
         }
     }
 
@@ -490,6 +492,8 @@ impl World {
     }
 
     fn server_update_playing(&mut self, inputs: &[PlayerInput], dt: f32, events: &mut Vec<GameEvent>) {
+        self.elapsed_time += dt;
+
         // Track which players actually fire this frame (for DoppelGanger)
         let mut did_fire = vec![false; self.players.len()];
 
@@ -851,7 +855,7 @@ impl World {
         self.bullets.extend(spawned_echoes);
 
         // Update bullets
-        let (bullet_events, sticky_datas, hit_infos) = update_bullets(&mut self.bullets, &mut self.players, &self.level.platforms, dt);
+        let (bullet_events, sticky_datas, hit_infos) = update_bullets(&mut self.bullets, &mut self.players, &self.level.platforms, &self.level.bounce_pads, dt);
         events.extend(bullet_events);
 
         // Post-hit processing from BulletHitInfo
@@ -987,6 +991,105 @@ impl World {
             }
         }
         self.healing_zones.retain(|z| z.lifetime > 0.0);
+
+        // Bounce pad collisions — launch player away from the face they hit
+        // Uses expanded margin so pads embedded inside walls still trigger
+        // (wall collision pushes player out before this runs, so we need slack)
+        let pad_margin = 0.35;
+        for pad in &self.level.bounce_pads {
+            let pad_min = pad.aabb.min;
+            let pad_max = pad.aabb.max;
+            let pad_cx = (pad_min.x + pad_max.x) * 0.5;
+            let pad_cy = (pad_min.y + pad_max.y) * 0.5;
+            let pad_hw = (pad_max.x - pad_min.x) * 0.5;
+            let pad_hh = (pad_max.y - pad_min.y) * 0.5;
+            for i in 0..self.players.len() {
+                if !self.players[i].alive { continue; }
+                let p = &self.players[i];
+                let pmin_x = p.position.x - p.size.x / 2.0;
+                let pmax_x = p.position.x + p.size.x / 2.0;
+                let pmin_y = p.position.y;
+                let pmax_y = p.position.y + p.size.y;
+                // Expanded AABB overlap check (pad + margin)
+                if pmax_x <= pad_min.x - pad_margin || pmin_x >= pad_max.x + pad_margin
+                    || pmax_y <= pad_min.y - pad_margin || pmin_y >= pad_max.y + pad_margin
+                {
+                    continue;
+                }
+                // Determine which face: compare player center to pad center
+                let player_cx = p.position.x;
+                let player_cy = p.position.y + p.size.y / 2.0;
+                let dx = (player_cx - pad_cx) / pad_hw.max(0.01);
+                let dy = (player_cy - pad_cy) / pad_hh.max(0.01);
+                if dx.abs() > dy.abs() {
+                    // Horizontal face — launch left or right
+                    let sign = if dx > 0.0 { 1.0 } else { -1.0 };
+                    self.players[i].velocity.x = sign * pad.strength;
+                    self.players[i].velocity.y = pad.strength * 0.3;
+                } else {
+                    // Vertical face — launch up or down
+                    let sign = if dy > 0.0 { 1.0 } else { -1.0 };
+                    self.players[i].velocity.y = sign * pad.strength;
+                    self.players[i].velocity.x = 0.0;
+                }
+            }
+        }
+
+        // Lava pool damage — drains HP over time (with margin so flush-with-floor pools work)
+        // Tick lava sizzle cooldowns
+        for p in self.players.iter_mut() {
+            if p.lava_sizzle_cd > 0.0 { p.lava_sizzle_cd -= dt; }
+        }
+        let lava_margin = 0.2;
+        for pool in &self.level.lava_pools {
+            for i in 0..self.players.len() {
+                if !self.players[i].alive { continue; }
+                let p = &self.players[i];
+                let pmin_x = p.position.x - p.size.x / 2.0;
+                let pmax_x = p.position.x + p.size.x / 2.0;
+                let pmin_y = p.position.y;
+                let pmax_y = p.position.y + p.size.y;
+                if pmax_x > pool.aabb.min.x && pmin_x < pool.aabb.max.x
+                    && pmax_y > pool.aabb.min.y - lava_margin && pmin_y < pool.aabb.max.y + lava_margin
+                {
+                    self.players[i].hp -= pool.dps * dt;
+                    self.players[i].hit_flash_timer = 0.05;
+                    // Emit sizzle event periodically for sound + particles
+                    if self.players[i].lava_sizzle_cd <= 0.0 {
+                        self.players[i].lava_sizzle_cd = 0.3;
+                        let px = self.players[i].position.x;
+                        let py = self.players[i].position.y;
+                        events.push(GameEvent::LavaSizzle { x: px, y: py, z: 0.0 });
+                    }
+                }
+            }
+        }
+
+        // Laser beam damage — line segment vs player AABB, toggled on/off
+        for laser in &self.level.lasers {
+            let cycle = laser.on_time + laser.off_time;
+            if cycle <= 0.0 { continue; }
+            let phase = self.elapsed_time % cycle;
+            if phase >= laser.on_time { continue; } // laser is off
+
+            let lx0 = laser.start.x; let ly0 = laser.start.y;
+            let lx1 = laser.end.x; let ly1 = laser.end.y;
+
+            for i in 0..self.players.len() {
+                if !self.players[i].alive || self.players[i].ghost_timer > 0.0 || self.players[i].invuln_timer > 0.0 {
+                    continue;
+                }
+                let p = &self.players[i];
+                let pmin_x = p.position.x - p.size.x / 2.0;
+                let pmax_x = p.position.x + p.size.x / 2.0;
+                let pmin_y = p.position.y;
+                let pmax_y = p.position.y + p.size.y;
+                // Line segment vs AABB intersection test
+                if line_intersects_aabb(lx0, ly0, lx1, ly1, pmin_x, pmin_y, pmax_x, pmax_y) {
+                    self.players[i].hp = 0.0;
+                }
+            }
+        }
 
         // Check for deaths
         for i in 0..self.players.len() {
@@ -1135,6 +1238,7 @@ impl World {
                 x: h.position.x, y: h.position.y,
                 owner: h.owner as u8, lifetime: h.lifetime,
             }).collect(),
+            elapsed_time: self.elapsed_time,
         }
     }
 
@@ -1150,6 +1254,7 @@ impl World {
         let base_hp = self.base_hp();
         self.state = snap.game_state(&names, &colors);
         self.card_hover = snap.card_hover;
+        self.elapsed_time = snap.elapsed_time;
 
         for (i, ps) in snap.players.iter().enumerate() {
             if i >= self.players.len() { break; }
@@ -1259,4 +1364,36 @@ impl World {
         spawn_from_events(&snap.events, &mut self.particles, &mut self.rng);
         self.latest_events = snap.events.clone();
     }
+}
+
+/// Line segment vs AABB intersection (2D, Liang-Barsky algorithm).
+fn line_intersects_aabb(
+    x0: f32, y0: f32, x1: f32, y1: f32,
+    min_x: f32, min_y: f32, max_x: f32, max_y: f32,
+) -> bool {
+    let dx = x1 - x0;
+    let dy = y1 - y0;
+    let mut tmin = 0.0_f32;
+    let mut tmax = 1.0_f32;
+
+    let edges = [
+        (-dx, x0 - min_x),
+        (dx, max_x - x0),
+        (-dy, y0 - min_y),
+        (dy, max_y - y0),
+    ];
+    for (p, q) in edges {
+        if p.abs() < 1e-9 {
+            if q < 0.0 { return false; }
+        } else {
+            let t = q / p;
+            if p < 0.0 {
+                tmin = tmin.max(t);
+            } else {
+                tmax = tmax.min(t);
+            }
+            if tmin > tmax { return false; }
+        }
+    }
+    true
 }

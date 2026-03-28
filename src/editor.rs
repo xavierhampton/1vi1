@@ -1,6 +1,6 @@
 use raylib::prelude::*;
 
-use crate::level::level::{load_all_levels, save_all_levels, LevelDef, PlatformDef};
+use crate::level::level::{load_all_levels, save_all_levels, LevelDef, PlatformDef, BouncePadDef, LavaPoolDef, LaserBeamDef};
 
 // ── Constants ───────────────────────────────────────────────────────────────
 
@@ -30,6 +30,12 @@ const BTN_COLOR: Color = Color::new(40, 40, 55, 255);
 const BTN_HOVER: Color = Color::new(60, 60, 80, 255);
 const DELETE_COLOR: Color = Color::new(180, 50, 50, 255);
 const DELETE_HOVER: Color = Color::new(220, 70, 70, 255);
+const PAD_COLOR: Color = Color::new(0, 200, 255, 255);
+const PAD_HOVER_COLOR: Color = Color::new(80, 230, 255, 255);
+const LAVA_COLOR: Color = Color::new(220, 60, 10, 255);
+const LAVA_HOVER_COLOR: Color = Color::new(255, 100, 40, 255);
+const LASER_COLOR: Color = Color::new(255, 40, 40, 255);
+const LASER_HOVER_COLOR: Color = Color::new(255, 100, 100, 255);
 
 // ── Tool ────────────────────────────────────────────────────────────────────
 
@@ -38,6 +44,9 @@ enum Tool {
     Platform,
     Wall,
     Spawn,
+    BouncePad,
+    Lava,
+    Laser,
     Erase,
 }
 
@@ -47,6 +56,9 @@ impl Tool {
             Tool::Platform => "Platform",
             Tool::Wall => "Wall",
             Tool::Spawn => "Spawn",
+            Tool::BouncePad => "Bounce",
+            Tool::Lava => "Lava",
+            Tool::Laser => "Laser",
             Tool::Erase => "Erase",
         }
     }
@@ -55,7 +67,10 @@ impl Tool {
             Tool::Platform => "[1]",
             Tool::Wall => "[2]",
             Tool::Spawn => "[3]",
-            Tool::Erase => "[4]",
+            Tool::BouncePad => "[4]",
+            Tool::Lava => "[5]",
+            Tool::Laser => "[6]",
+            Tool::Erase => "[7]",
         }
     }
 }
@@ -81,6 +96,12 @@ pub struct Editor {
     list_scroll: i32,
     // Confirmation for delete
     confirm_delete: bool,
+    // Bounce pad drag start (drag-to-create like platforms)
+    pad_drag_start: Option<[f32; 2]>,
+    // Lava pool drag start
+    lava_drag_start: Option<[f32; 2]>,
+    // Laser: first click sets start, second click sets end
+    laser_start: Option<[f32; 2]>,
     // Dirty flag (unsaved changes)
     dirty: bool,
     // Status message
@@ -106,6 +127,9 @@ impl Editor {
             pan_start_mouse: Vector2::zero(),
             pan_start_cam: [0.0, 0.0],
             placing_spawn: 0,
+            pad_drag_start: None,
+            lava_drag_start: None,
+            laser_start: None,
             list_scroll: 0,
             confirm_delete: false,
             dirty: false,
@@ -191,7 +215,10 @@ impl Editor {
         if rl.is_key_pressed(KeyboardKey::KEY_ONE) { self.tool = Tool::Platform; }
         if rl.is_key_pressed(KeyboardKey::KEY_TWO) { self.tool = Tool::Wall; }
         if rl.is_key_pressed(KeyboardKey::KEY_THREE) { self.tool = Tool::Spawn; }
-        if rl.is_key_pressed(KeyboardKey::KEY_FOUR) { self.tool = Tool::Erase; }
+        if rl.is_key_pressed(KeyboardKey::KEY_FOUR) { self.tool = Tool::BouncePad; }
+        if rl.is_key_pressed(KeyboardKey::KEY_FIVE) { self.tool = Tool::Lava; }
+        if rl.is_key_pressed(KeyboardKey::KEY_SIX) { self.tool = Tool::Laser; }
+        if rl.is_key_pressed(KeyboardKey::KEY_SEVEN) { self.tool = Tool::Erase; }
 
         // Ctrl+S to save
         if (rl.is_key_down(KeyboardKey::KEY_LEFT_CONTROL) || rl.is_key_down(KeyboardKey::KEY_RIGHT_CONTROL))
@@ -290,22 +317,143 @@ impl Editor {
                         }
                     }
                 }
+                Tool::BouncePad => {
+                    if rl.is_mouse_button_pressed(MouseButton::MOUSE_BUTTON_LEFT) {
+                        self.pad_drag_start = Some(snapped);
+                    }
+                    if rl.is_mouse_button_released(MouseButton::MOUSE_BUTTON_LEFT) {
+                        if let Some(start) = self.pad_drag_start.take() {
+                            let end = snapped;
+                            let min_x = start[0].min(end[0]);
+                            let min_y = start[1].min(end[1]);
+                            let max_x = start[0].max(end[0]);
+                            let max_y = start[1].max(end[1]);
+                            if (max_x - min_x).abs() >= GRID_SIZE * 0.5
+                                && (max_y - min_y).abs() >= GRID_SIZE * 0.5
+                            {
+                                if let Some(lev) = self.levels.get_mut(self.current) {
+                                    lev.bounce_pads.push(BouncePadDef {
+                                        min: [min_x, min_y],
+                                        max: [max_x, max_y],
+                                        strength: 25.0,
+                                    });
+                                    self.dirty = true;
+                                }
+                            }
+                        }
+                    }
+                }
+                Tool::Lava => {
+                    if rl.is_mouse_button_pressed(MouseButton::MOUSE_BUTTON_LEFT) {
+                        self.lava_drag_start = Some(snapped);
+                    }
+                    if rl.is_mouse_button_released(MouseButton::MOUSE_BUTTON_LEFT) {
+                        if let Some(start) = self.lava_drag_start.take() {
+                            let end = snapped;
+                            let min_x = start[0].min(end[0]);
+                            let min_y = start[1].min(end[1]);
+                            let max_x = start[0].max(end[0]);
+                            let max_y = start[1].max(end[1]);
+                            if (max_x - min_x).abs() >= GRID_SIZE * 0.5
+                                && (max_y - min_y).abs() >= GRID_SIZE * 0.5
+                            {
+                                if let Some(lev) = self.levels.get_mut(self.current) {
+                                    lev.lava_pools.push(LavaPoolDef {
+                                        min: [min_x, min_y],
+                                        max: [max_x, max_y],
+                                        dps: 40.0,
+                                    });
+                                    self.dirty = true;
+                                }
+                            }
+                        }
+                    }
+                }
+                Tool::Laser => {
+                    if rl.is_mouse_button_pressed(MouseButton::MOUSE_BUTTON_LEFT) {
+                        if let Some(start) = self.laser_start.take() {
+                            // Second click: create the laser
+                            let end = [Self::snap(wx), Self::snap(wy)];
+                            if (start[0] - end[0]).abs() > GRID_SIZE * 0.5
+                                || (start[1] - end[1]).abs() > GRID_SIZE * 0.5
+                            {
+                                if let Some(lev) = self.levels.get_mut(self.current) {
+                                    lev.lasers.push(LaserBeamDef {
+                                        start,
+                                        end,
+                                        on_time: 2.0,
+                                        off_time: 2.0,
+                                    });
+                                    self.dirty = true;
+                                }
+                            }
+                        } else {
+                            // First click: set start point
+                            self.laser_start = Some(snapped);
+                        }
+                    }
+                }
                 Tool::Erase => {
                     if rl.is_mouse_button_pressed(MouseButton::MOUSE_BUTTON_LEFT) {
                         if let Some(lev) = self.levels.get_mut(self.current) {
                             // Find platform under cursor and remove it
-                            let mut found = None;
+                            let mut found_plat = None;
                             for (i, p) in lev.platforms.iter().enumerate().rev() {
                                 if wx >= p.min[0] && wx <= p.max[0]
                                     && wy >= p.min[1] && wy <= p.max[1]
                                 {
-                                    found = Some(i);
+                                    found_plat = Some(i);
                                     break;
                                 }
                             }
-                            if let Some(i) = found {
+                            if let Some(i) = found_plat {
                                 lev.platforms.remove(i);
                                 self.dirty = true;
+                            } else {
+                                // Check bounce pads (AABB hit test)
+                                let mut found_pad = None;
+                                for (i, b) in lev.bounce_pads.iter().enumerate().rev() {
+                                    if wx >= b.min[0] && wx <= b.max[0]
+                                        && wy >= b.min[1] && wy <= b.max[1]
+                                    {
+                                        found_pad = Some(i);
+                                        break;
+                                    }
+                                }
+                                if let Some(i) = found_pad {
+                                    lev.bounce_pads.remove(i);
+                                    self.dirty = true;
+                                } else {
+                                    // Check lava pools
+                                    let mut found_lava = None;
+                                    for (i, l) in lev.lava_pools.iter().enumerate().rev() {
+                                        if wx >= l.min[0] && wx <= l.max[0]
+                                            && wy >= l.min[1] && wy <= l.max[1]
+                                        {
+                                            found_lava = Some(i);
+                                            break;
+                                        }
+                                    }
+                                    if let Some(i) = found_lava {
+                                        lev.lava_pools.remove(i);
+                                        self.dirty = true;
+                                    } else {
+                                        // Check lasers (near either endpoint)
+                                        let mut found_laser = None;
+                                        for (i, l) in lev.lasers.iter().enumerate().rev() {
+                                            let d0 = ((wx - l.start[0]).powi(2) + (wy - l.start[1]).powi(2)).sqrt();
+                                            let d1 = ((wx - l.end[0]).powi(2) + (wy - l.end[1]).powi(2)).sqrt();
+                                            if d0 < 0.5 || d1 < 0.5 {
+                                                found_laser = Some(i);
+                                                break;
+                                            }
+                                        }
+                                        if let Some(i) = found_laser {
+                                            lev.lasers.remove(i);
+                                            self.dirty = true;
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
@@ -395,6 +543,46 @@ impl Editor {
             d.draw_rectangle_lines(sx1 as i32, sy1 as i32, rw as i32, rh as i32, Color::WHITE);
         }
 
+        // ── Draw drag preview (bounce pads) ──────────────────────────
+        if let Some(start) = self.pad_drag_start {
+            let mx = d.get_mouse_x() as f32;
+            let my = d.get_mouse_y() as f32;
+            let [wx, wy] = self.screen_to_world(mx, my, sw, sh);
+            let end = [Self::snap(wx), Self::snap(wy)];
+            let min_x = start[0].min(end[0]);
+            let min_y = start[1].min(end[1]);
+            let max_x = start[0].max(end[0]);
+            let max_y = start[1].max(end[1]);
+
+            let (sx1, sy1) = self.world_to_screen(min_x, max_y, sw, sh);
+            let (sx2, sy2) = self.world_to_screen(max_x, min_y, sw, sh);
+            let rw = sx2 - sx1;
+            let rh = sy2 - sy1;
+            let col = Color::new(PAD_COLOR.r, PAD_COLOR.g, PAD_COLOR.b, 100);
+            d.draw_rectangle(sx1 as i32, sy1 as i32, rw as i32, rh as i32, col);
+            d.draw_rectangle_lines(sx1 as i32, sy1 as i32, rw as i32, rh as i32, Color::new(0, 255, 255, 200));
+        }
+
+        // ── Draw drag preview (lava pools) ───────────────────────────
+        if let Some(start) = self.lava_drag_start {
+            let mx = d.get_mouse_x() as f32;
+            let my = d.get_mouse_y() as f32;
+            let [wx, wy] = self.screen_to_world(mx, my, sw, sh);
+            let end = [Self::snap(wx), Self::snap(wy)];
+            let min_x = start[0].min(end[0]);
+            let min_y = start[1].min(end[1]);
+            let max_x = start[0].max(end[0]);
+            let max_y = start[1].max(end[1]);
+
+            let (sx1, sy1) = self.world_to_screen(min_x, max_y, sw, sh);
+            let (sx2, sy2) = self.world_to_screen(max_x, min_y, sw, sh);
+            let rw = sx2 - sx1;
+            let rh = sy2 - sy1;
+            let col = Color::new(LAVA_COLOR.r, LAVA_COLOR.g, LAVA_COLOR.b, 100);
+            d.draw_rectangle(sx1 as i32, sy1 as i32, rw as i32, rh as i32, col);
+            d.draw_rectangle_lines(sx1 as i32, sy1 as i32, rw as i32, rh as i32, Color::new(255, 80, 20, 200));
+        }
+
         // ── Sidebar ─────────────────────────────────────────────────────
         self.draw_sidebar(d, sw, sh, canvas_w);
 
@@ -413,7 +601,7 @@ impl Editor {
         let hint = if self.editing_name {
             "Type level name, press Enter to confirm"
         } else {
-            "LMB: place | RMB/MMB: pan | Scroll: zoom | Ctrl+S: save | Ctrl+Z: undo | ESC: quit"
+            "LMB: place/drag | RMB/MMB: pan | Scroll: zoom | Ctrl+S: save | Ctrl+Z: undo | ESC: quit"
         };
         d.draw_text(hint, 8, sh - 22, 14, DIM_TEXT);
     }
@@ -508,6 +696,83 @@ impl Editor {
             d.draw_text(&label, sx as i32 - tw / 2, sy as i32 - 7, 14, Color::WHITE);
         }
 
+        // Draw bounce pads (rectangles like platforms, cyan colored)
+        for (i, b) in level.bounce_pads.iter().enumerate() {
+            let (sx1, sy1) = self.world_to_screen(b.min[0], b.max[1], sw, sh);
+            let (sx2, sy2) = self.world_to_screen(b.max[0], b.min[1], sw, sh);
+            let rw = (sx2 - sx1).max(1.0);
+            let rh = (sy2 - sy1).max(1.0);
+
+            let mut hover = false;
+            if interactive && in_canvas && self.tool == Tool::Erase {
+                let [cwx, cwy] = self.screen_to_world(mx, my, sw, sh);
+                if cwx >= b.min[0] && cwx <= b.max[0] && cwy >= b.min[1] && cwy <= b.max[1] {
+                    hover = true;
+                }
+            }
+            let col = if hover { PAD_HOVER_COLOR } else { PAD_COLOR };
+
+            d.draw_rectangle(sx1 as i32, sy1 as i32, rw as i32, rh as i32, Color::new(col.r, col.g, col.b, 100));
+            d.draw_rectangle_lines(sx1 as i32, sy1 as i32, rw as i32, rh as i32, col);
+
+            let label = format!("B{}", i + 1);
+            let tw = d.measure_text(&label, 14);
+            let cx = sx1 as i32 + rw as i32 / 2;
+            let cy = sy1 as i32 + rh as i32 / 2;
+            d.draw_text(&label, cx - tw / 2, cy - 7, 14, Color::WHITE);
+        }
+
+        // Draw lava pools (red rectangles)
+        for (i, l) in level.lava_pools.iter().enumerate() {
+            let (sx1, sy1) = self.world_to_screen(l.min[0], l.max[1], sw, sh);
+            let (sx2, sy2) = self.world_to_screen(l.max[0], l.min[1], sw, sh);
+            let rw = (sx2 - sx1).max(1.0);
+            let rh = (sy2 - sy1).max(1.0);
+
+            let mut hover = false;
+            if interactive && in_canvas && self.tool == Tool::Erase {
+                let [cwx, cwy] = self.screen_to_world(mx, my, sw, sh);
+                if cwx >= l.min[0] && cwx <= l.max[0] && cwy >= l.min[1] && cwy <= l.max[1] {
+                    hover = true;
+                }
+            }
+            let col = if hover { LAVA_HOVER_COLOR } else { LAVA_COLOR };
+
+            d.draw_rectangle(sx1 as i32, sy1 as i32, rw as i32, rh as i32, Color::new(col.r, col.g, col.b, 100));
+            d.draw_rectangle_lines(sx1 as i32, sy1 as i32, rw as i32, rh as i32, col);
+
+            let label = format!("L{}", i + 1);
+            let tw = d.measure_text(&label, 14);
+            let cx = sx1 as i32 + rw as i32 / 2;
+            let cy = sy1 as i32 + rh as i32 / 2;
+            d.draw_text(&label, cx - tw / 2, cy - 7, 14, Color::WHITE);
+        }
+
+        // Draw lasers (line between two points with emitter dots)
+        for (i, l) in level.lasers.iter().enumerate() {
+            let (sx0, sy0) = self.world_to_screen(l.start[0], l.start[1], sw, sh);
+            let (sx1, sy1) = self.world_to_screen(l.end[0], l.end[1], sw, sh);
+
+            let mut hover = false;
+            if interactive && in_canvas && self.tool == Tool::Erase {
+                let [cwx, cwy] = self.screen_to_world(mx, my, sw, sh);
+                let d0 = ((cwx - l.start[0]).powi(2) + (cwy - l.start[1]).powi(2)).sqrt();
+                let d1 = ((cwx - l.end[0]).powi(2) + (cwy - l.end[1]).powi(2)).sqrt();
+                if d0 < 0.5 || d1 < 0.5 { hover = true; }
+            }
+            let col = if hover { LASER_HOVER_COLOR } else { LASER_COLOR };
+
+            d.draw_line_ex(Vector2::new(sx0, sy0), Vector2::new(sx1, sy1), 2.0, col);
+            d.draw_circle(sx0 as i32, sy0 as i32, 5.0, col);
+            d.draw_circle(sx1 as i32, sy1 as i32, 5.0, col);
+
+            let mx_l = (sx0 + sx1) * 0.5;
+            let my_l = (sy0 + sy1) * 0.5;
+            let label = format!("Z{}", i + 1);
+            let tw = d.measure_text(&label, 14);
+            d.draw_text(&label, mx_l as i32 - tw / 2, my_l as i32 - 7, 14, Color::WHITE);
+        }
+
         // Draw cursor position indicator (spawn tool ghost)
         if interactive && in_canvas && self.tool == Tool::Spawn && self.drag_start.is_none() {
             let [wx, wy] = self.screen_to_world(mx, my, sw, sh);
@@ -523,13 +788,48 @@ impl Editor {
             d.draw_circle(sx as i32, sy as i32, r as f32, Color::new(col.r, col.g, col.b, 60));
             d.draw_circle_lines(sx as i32, sy as i32, r as f32, Color::new(col.r, col.g, col.b, 150));
         }
+
+        // Bounce pad tool cursor crosshair (shows snapped position)
+        if interactive && in_canvas && self.tool == Tool::BouncePad && self.pad_drag_start.is_none() {
+            let [wx, wy] = self.screen_to_world(mx, my, sw, sh);
+            let pos = [Self::snap(wx), Self::snap(wy)];
+            let (gsx, gsy) = self.world_to_screen(pos[0], pos[1], sw, sh);
+            let ghost = Color::new(PAD_COLOR.r, PAD_COLOR.g, PAD_COLOR.b, 120);
+            d.draw_circle(gsx as i32, gsy as i32, 4.0, ghost);
+        }
+
+        // Lava tool cursor
+        if interactive && in_canvas && self.tool == Tool::Lava && self.lava_drag_start.is_none() {
+            let [wx, wy] = self.screen_to_world(mx, my, sw, sh);
+            let pos = [Self::snap(wx), Self::snap(wy)];
+            let (gsx, gsy) = self.world_to_screen(pos[0], pos[1], sw, sh);
+            d.draw_circle(gsx as i32, gsy as i32, 4.0, Color::new(LAVA_COLOR.r, LAVA_COLOR.g, LAVA_COLOR.b, 120));
+        }
+
+        // Laser tool: show first point placed
+        if interactive && in_canvas && self.tool == Tool::Laser {
+            let [wx, wy] = self.screen_to_world(mx, my, sw, sh);
+            let pos = [Self::snap(wx), Self::snap(wy)];
+            let (gsx, gsy) = self.world_to_screen(pos[0], pos[1], sw, sh);
+            if let Some(start) = self.laser_start {
+                let (ssx, ssy) = self.world_to_screen(start[0], start[1], sw, sh);
+                d.draw_circle(ssx as i32, ssy as i32, 5.0, LASER_COLOR);
+                d.draw_line_ex(Vector2::new(ssx, ssy), Vector2::new(gsx, gsy), 2.0,
+                    Color::new(LASER_COLOR.r, LASER_COLOR.g, LASER_COLOR.b, 100));
+                d.draw_circle(gsx as i32, gsy as i32, 4.0,
+                    Color::new(LASER_COLOR.r, LASER_COLOR.g, LASER_COLOR.b, 100));
+            } else {
+                d.draw_circle(gsx as i32, gsy as i32, 4.0,
+                    Color::new(LASER_COLOR.r, LASER_COLOR.g, LASER_COLOR.b, 120));
+            }
+        }
     }
 
     fn draw_toolbar(&self, d: &mut RaylibDrawHandle, canvas_w: i32) {
         // Tool bar at top
         d.draw_rectangle(0, 0, canvas_w, 34, Color::new(30, 30, 40, 230));
 
-        let tools = [Tool::Platform, Tool::Wall, Tool::Spawn, Tool::Erase];
+        let tools = [Tool::Platform, Tool::Wall, Tool::Spawn, Tool::BouncePad, Tool::Lava, Tool::Laser, Tool::Erase];
         let mut tx = 8;
         for t in &tools {
             let label = format!("{} {}", t.key_hint(), t.label());
@@ -632,6 +932,10 @@ impl Editor {
                         max: [15.0, 12.0],
                     },
                 ],
+                sawblades: vec![],
+                bounce_pads: vec![],
+                lava_pools: vec![],
+                lasers: vec![],
             });
             self.current = self.levels.len() - 1;
             self.dirty = true;
@@ -692,6 +996,10 @@ impl Editor {
             y += 18;
             d.draw_text(&format!("Platforms: {}", lev.platforms.len()), sx + 10, y, 14, DIM_TEXT);
             y += 18;
+            if !lev.bounce_pads.is_empty() {
+                d.draw_text(&format!("Bounce Pads: {}", lev.bounce_pads.len()), sx + 10, y, 14, PAD_COLOR);
+                y += 18;
+            }
             let spawn_col = if lev.spawn_points.len() == REQUIRED_SPAWNS {
                 Color::new(80, 220, 80, 200)
             } else {

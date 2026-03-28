@@ -6,7 +6,7 @@ use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
 use raylib::prelude::*;
 
 use crate::combat::bullet::BULLET_GRAVITY;
-use crate::combat::particles::update_particles;
+use crate::combat::particles::{spawn_lava_bubble, update_particles};
 use crate::game::net;
 use crate::game::state::GameState;
 use crate::game::world::World;
@@ -183,6 +183,16 @@ impl GameClient {
 
         // 5. Update particles locally (client-side cosmetic only)
         update_particles(&mut self.world.particles, dt);
+
+        // 6. Ambient lava bubbles (cosmetic)
+        for pool in &self.world.level.lava_pools {
+            if self.world.rng.next_f32() < dt * 4.0 {
+                let x = self.world.rng.range(pool.aabb.min.x, pool.aabb.max.x);
+                let y = pool.aabb.max.y;
+                spawn_lava_bubble(&mut self.world.particles, &mut self.world.rng,
+                    Vector3::new(x, y, 0.0));
+            }
+        }
     }
 }
 

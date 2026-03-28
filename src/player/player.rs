@@ -42,6 +42,7 @@ pub struct Player {
     pub wall_dir: i8, // -1 = wall left, 0 = none, 1 = wall right
     pub invuln_timer: f32, // spawn invulnerability (Smash Bros style)
     pub accessories: Vec<(u8, u8, u8, u8)>, // up to 3: (id, r, g, b)
+    pub lava_sizzle_cd: f32, // throttle for lava sizzle SFX/particles
 }
 
 impl Player {
@@ -83,6 +84,7 @@ impl Player {
             wall_dir: 0,
             invuln_timer: 0.0,
             accessories: Vec::new(),
+            lava_sizzle_cd: 0.0,
         }
     }
 

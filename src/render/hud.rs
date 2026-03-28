@@ -1,3 +1,4 @@
+use std::ffi::CString;
 use raylib::prelude::*;
 
 use crate::game::cards::CARD_CATALOG;
@@ -6,33 +7,63 @@ use crate::game::world::{World, COUNTDOWN_DURATION, MAX_BULLETS, RELOAD_TIME};
 use crate::level::level::level_name;
 use crate::render::crt::barrel_screen_pos;
 
-pub fn draw_hud(
-    d: &mut RaylibDrawHandle, world: &World, camera: Camera3D,
-    render_w: i32, render_h: i32, local_player: u8,
-) {
-    if render_w < 100 || render_h < 100 { return; }
+/// Measure text width using raylib's default font (works without RaylibHandle).
+fn measure_text(text: &str, font_size: i32) -> i32 {
+    let c_text = CString::new(text).unwrap();
+    unsafe { raylib::ffi::MeasureText(c_text.as_ptr(), font_size) }
+}
+
+/// Pre-compute screen positions that need the main draw handle.
+/// Call this BEFORE entering texture mode.
+pub fn precompute_hud(
+    d: &RaylibDrawHandle, world: &World, camera: Camera3D,
+    render_w: i32, render_h: i32,
+) -> HudPrecomputed {
     let mouse = d.get_mouse_position();
-
-    // Tooltip to draw last (on top of everything)
-    let mut tooltip: Option<(&str, &str, (u8, u8, u8), f32, f32)> = None;
-
-    // ── Per-player floating HUD (name, HP, ammo — above head) ───────────
+    let mut player_screen_pos = Vec::new();
     for player in &world.players {
-        if !player.alive { continue; }
+        if !player.alive {
+            player_screen_pos.push(None);
+            continue;
+        }
         let above_head = Vector3::new(
             player.position.x,
             player.position.y + player.size.y + 0.15,
             player.position.z,
         );
         let screen_pos = d.get_world_to_screen(above_head, camera);
-        // Barrel-transform to match the distorted player sprite positions
         let (bx, by) = barrel_screen_pos(screen_pos.x, screen_pos.y, render_w as f32, render_h as f32);
-        let sx = bx as i32;
-        let sy = by as i32;
+        player_screen_pos.push(Some((bx as i32, by as i32)));
+    }
+    HudPrecomputed { mouse, player_screen_pos }
+}
+
+pub struct HudPrecomputed {
+    pub mouse: Vector2,
+    pub player_screen_pos: Vec<Option<(i32, i32)>>,
+}
+
+pub fn draw_hud(
+    d: &mut impl RaylibDraw, world: &World, pre: &HudPrecomputed,
+    render_w: i32, render_h: i32, local_player: u8,
+) {
+    if render_w < 100 || render_h < 100 { return; }
+    let mouse = pre.mouse;
+
+    // Tooltip to draw last (on top of everything)
+    let mut tooltip: Option<(&str, &str, (u8, u8, u8), f32, f32)> = None;
+
+    // ── Per-player floating HUD (name, HP, ammo — above head) ───────────
+    for (pi, player) in world.players.iter().enumerate() {
+        if !player.alive { continue; }
+        let (sx, sy) = match pre.player_screen_pos.get(pi).copied().flatten() {
+            Some(pos) => pos,
+            None => continue,
+        };
 
         // Name
         let font_size = 20;
-        let text_w = d.measure_text(&player.name, font_size);
+        let text_w = measure_text(&player.name, font_size);
         d.draw_text(&player.name, sx - text_w / 2, sy - font_size, font_size, Color::WHITE);
 
         // HP bar
@@ -120,7 +151,7 @@ pub fn draw_hud(
 
                     let glyph = format!("{}", def.icon_glyph);
                     let g_font = 28;
-                    let g_w = d.measure_text(&glyph, g_font);
+                    let g_w = measure_text(&glyph, g_font);
                     d.draw_text(&glyph, cx as i32 - g_w / 2, cy as i32 - g_font / 2,
                         g_font, Color::new(255, 255, 255, 240));
                 } else {
@@ -138,7 +169,7 @@ pub fn draw_hud(
 
                     let cd_text = format!("{:.0}", cooldown.ceil());
                     let cd_font = 22;
-                    let cd_w = d.measure_text(&cd_text, cd_font);
+                    let cd_w = measure_text(&cd_text, cd_font);
                     d.draw_text(&cd_text, cx as i32 - cd_w / 2, cy as i32 - cd_font / 2,
                         cd_font, Color::new(cr, cg, cb, 160));
                 }
@@ -184,7 +215,7 @@ pub fn draw_hud(
 
                 let glyph = format!("{}", def.icon_glyph);
                 let g_font = 28;
-                let g_w = d.measure_text(&glyph, g_font);
+                let g_w = measure_text(&glyph, g_font);
                 d.draw_text(&glyph, cx as i32 - g_w / 2, cy as i32 - g_font / 2,
                     g_font, Color::new(255, 255, 255, 240));
 
@@ -202,7 +233,7 @@ pub fn draw_hud(
     {
         let map_label = format!("[{}]", level_name(world.level.id));
         let font_size = 16;
-        let tw = d.measure_text(&map_label, font_size);
+        let tw = measure_text(&map_label, font_size);
         let margin_r = 16;
         d.draw_text(&map_label, render_w - margin_r - tw, 12, font_size,
             Color::new(180, 180, 180, 160));
@@ -247,7 +278,7 @@ pub fn draw_hud(
         let num = timer.ceil() as i32;
         let text = format!("{}", num.max(1));
         let font_size = 120;
-        let text_w = d.measure_text(&text, font_size);
+        let text_w = measure_text(&text, font_size);
         d.draw_text(&text, render_w / 2 - text_w / 2, render_h / 2 - font_size / 2,
             font_size, Color::WHITE);
     }
@@ -256,7 +287,7 @@ pub fn draw_hud(
     if let GameState::RoundEnd { winner_name, winner_color, .. } = &world.state {
         let text = format!("{} Wins!", winner_name);
         let font_size = 80;
-        let text_w = d.measure_text(&text, font_size);
+        let text_w = measure_text(&text, font_size);
         let color = Color::new(winner_color.0, winner_color.1, winner_color.2, 255);
         d.draw_text(&text, render_w / 2 - text_w / 2, render_h / 2 - font_size / 2,
             font_size, color);
@@ -268,8 +299,8 @@ pub fn draw_hud(
         let pad_y: i32 = 8;
         let name_font = 18;
         let desc_font = 14;
-        let name_w = d.measure_text(name, name_font);
-        let desc_w = d.measure_text(desc, desc_font);
+        let name_w = measure_text(name, name_font);
+        let desc_w = measure_text(desc, desc_font);
         let inner_w = name_w.max(desc_w);
         let box_w = inner_w + pad_x * 2;
         let box_h = name_font + desc_font + pad_y * 3;

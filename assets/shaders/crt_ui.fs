@@ -18,15 +18,9 @@ void main() {
 
     // Scanlines (light, matching other passes)
     float scan = smoothstep(0.35, 0.5, fract(uv.y * 300.0));
-    color *= 0.85 + 0.15 * scan;
+    color *= 0.88 + 0.12 * scan;
 
-    // Vignette
-    vec2 vig = uv - 0.5;
-    float vigAmount = 1.0 - dot(vig, vig) * 1.2;
-    color *= clamp(vigAmount, 0.0, 1.0);
-
-    // Brightness compensation
-    color *= 1.08;
+    // No vignette on UI — keeps text and icons fully readable
 
     finalColor = vec4(color, alpha);
 }

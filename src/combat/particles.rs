@@ -108,6 +108,9 @@ pub fn spawn_from_events(
             GameEvent::Explosion { x, y, z, r, g, b, radius } => {
                 spawn_explosion(particles, rng, Vector3::new(*x, *y, *z), Color::new(*r, *g, *b, 255), *radius);
             }
+            GameEvent::LavaSizzle { x, y, z } => {
+                spawn_lava_sizzle(particles, rng, Vector3::new(*x, *y, *z));
+            }
             GameEvent::BulletFired { .. } => {}
             GameEvent::Jumped { .. } => {}
             GameEvent::Landed { .. } => {}
@@ -132,6 +135,52 @@ pub fn spawn_explosion(particles: &mut Vec<Particle>, rng: &mut Rng, pos: Vector
             size: rng.range(0.04, 0.10) * radius.max(0.5),
         });
     }
+}
+
+pub fn spawn_lava_sizzle(particles: &mut Vec<Particle>, rng: &mut Rng, pos: Vector3) {
+    // Rising orange/red embers + steam puffs
+    for _ in 0..6 {
+        let colors = [
+            Color::new(255, 100, 20, 255),  // orange
+            Color::new(255, 60, 10, 255),   // red-orange
+            Color::new(255, 180, 40, 255),  // yellow-orange
+            Color::new(200, 40, 5, 255),    // dark red
+        ];
+        let color = colors[rng.next() as usize % colors.len()];
+        let lifetime = rng.range(0.3, 0.7);
+        particles.push(Particle {
+            position: Vector3::new(
+                pos.x + rng.range(-0.3, 0.3),
+                pos.y + rng.range(0.0, 0.3),
+                pos.z,
+            ),
+            vel_x: rng.range(-1.5, 1.5),
+            vel_y: rng.range(3.0, 7.0), // upward burst
+            lifetime,
+            max_lifetime: lifetime,
+            color,
+            size: rng.range(0.03, 0.08),
+        });
+    }
+}
+
+pub fn spawn_lava_bubble(particles: &mut Vec<Particle>, rng: &mut Rng, pos: Vector3) {
+    let colors = [
+        Color::new(255, 80, 10, 200),
+        Color::new(255, 120, 20, 180),
+        Color::new(220, 50, 5, 200),
+    ];
+    let color = colors[rng.next() as usize % colors.len()];
+    let lifetime = rng.range(0.4, 0.9);
+    particles.push(Particle {
+        position: pos,
+        vel_x: rng.range(-0.5, 0.5),
+        vel_y: rng.range(1.5, 4.0),
+        lifetime,
+        max_lifetime: lifetime,
+        color,
+        size: rng.range(0.04, 0.09),
+    });
 }
 
 pub fn spawn_death_explosion(particles: &mut Vec<Particle>, rng: &mut Rng, pos: Vector3, color: Color) {

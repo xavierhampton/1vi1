@@ -107,6 +107,104 @@ pub fn draw_world(
                     255,
                 ));
             }
+
+            // Bounce pads — glowing wall block
+            for pad in &world.level.bounce_pads {
+                let c = pad.aabb.center();
+                let s = pad.aabb.size();
+                let glow_pulse = (time * 4.0).sin() * 0.2 + 0.8;
+                let ga = (glow_pulse * 255.0) as u8;
+                let pad_color = Color::new(0, (180.0 * glow_pulse) as u8, (255.0 * glow_pulse) as u8, ga);
+                let bright = Color::new(60, (230.0 * glow_pulse) as u8, 255, ga);
+
+                // Outer cube
+                d3.draw_cube(c, s.x, s.y, s.z, pad_color);
+                // Brighter inner cube
+                let inset = 0.08;
+                let ix = (s.x - inset * 2.0).max(0.05);
+                let iy = (s.y - inset * 2.0).max(0.05);
+                let iz = (s.z - inset * 2.0).max(0.05);
+                d3.draw_cube(c, ix, iy, iz, bright);
+                // Wireframe
+                d3.draw_cube_wires(c, s.x, s.y, s.z, Color::new(150, 255, 255, ga));
+            }
+
+            // Lava pools — animated glowing hazard
+            for (pi, pool) in world.level.lava_pools.iter().enumerate() {
+                let c = pool.aabb.center();
+                let s = pool.aabb.size();
+                let phase_offset = pi as f32 * 1.7; // stagger per pool
+                let pulse = (time * 3.0 + phase_offset).sin() * 0.15 + 0.85;
+                let ripple = (time * 5.0 + phase_offset).sin() * 0.1 + 0.9;
+
+                // Dark base layer
+                let base_color = Color::new(
+                    (160.0 * pulse) as u8,
+                    (30.0 * pulse) as u8,
+                    5,
+                    230,
+                );
+                d3.draw_cube(c, s.x, s.y, s.z, base_color);
+
+                // Hot inner core — shifts between orange and yellow
+                let hot_g = (80.0 + 60.0 * (time * 2.0 + phase_offset).sin()) * ripple;
+                let hot = Color::new(255, hot_g as u8, 15, (240.0 * pulse) as u8);
+                let inset = 0.06;
+                let ix = (s.x - inset * 2.0).max(0.05);
+                let iy = (s.y - inset * 2.0).max(0.05);
+                let iz = (s.z - inset * 2.0).max(0.05);
+                d3.draw_cube(c, ix, iy, iz, hot);
+
+                // Bright surface stripe (simulates flowing surface)
+                let stripe_y = c.y + s.y * 0.25;
+                let stripe_center = Vector3::new(c.x, stripe_y, c.z);
+                let stripe_a = ((time * 4.0 + phase_offset).sin() * 0.5 + 0.5) * 180.0;
+                d3.draw_cube(stripe_center, s.x * 0.9, s.y * 0.15, s.z * 0.8,
+                    Color::new(255, 200, 40, stripe_a as u8));
+
+                // Wireframe border — bright warning outline
+                d3.draw_cube_wires(c, s.x, s.y, s.z,
+                    Color::new(255, 80, 20, (220.0 * pulse) as u8));
+            }
+
+            // Laser beams — glowing cylinder between two emitter cubes, toggled on/off
+            for laser in &world.level.lasers {
+                let cycle = laser.on_time + laser.off_time;
+                let phase = if cycle > 0.0 { world.elapsed_time % cycle } else { 0.0 };
+                let is_on = phase < laser.on_time;
+
+                let emitter_size = 0.25;
+                let emitter_color = if is_on {
+                    Color::new(255, 40, 40, 255)
+                } else {
+                    Color::new(100, 30, 30, 255)
+                };
+
+                // Emitter cubes
+                d3.draw_cube(laser.start, emitter_size, emitter_size, emitter_size, emitter_color);
+                d3.draw_cube_wires(laser.start, emitter_size, emitter_size, emitter_size, Color::new(255, 100, 100, 200));
+                d3.draw_cube(laser.end, emitter_size, emitter_size, emitter_size, emitter_color);
+                d3.draw_cube_wires(laser.end, emitter_size, emitter_size, emitter_size, Color::new(255, 100, 100, 200));
+
+                if is_on {
+                    let flicker = (time * 20.0).sin() * 0.1 + 0.9;
+                    let beam_color = Color::new(255, (40.0 * flicker) as u8, (40.0 * flicker) as u8, (220.0 * flicker) as u8);
+                    // Main beam
+                    d3.draw_cylinder_ex(laser.start, laser.end, 0.08, 0.08, 6, beam_color);
+                    // Bright core
+                    d3.draw_cylinder_ex(laser.start, laser.end, 0.03, 0.03, 6, Color::new(255, 200, 200, (255.0 * flicker) as u8));
+                }
+
+                // Warning glow when about to turn on (last 0.5s of off phase)
+                if !is_on && cycle > 0.0 {
+                    let time_until_on = cycle - phase;
+                    if time_until_on < 0.5 {
+                        let warn = (world.elapsed_time * 12.0).sin().abs() * 0.4;
+                        let warn_a = (warn * 150.0) as u8;
+                        d3.draw_cylinder_ex(laser.start, laser.end, 0.04, 0.04, 6, Color::new(255, 60, 60, warn_a));
+                    }
+                }
+            }
         }
     }
 
@@ -478,33 +576,36 @@ pub fn draw_world(
             );
         }
 
-        // HUD drawn directly to screen — on top of CRT vignette
-        hud::draw_hud(&mut d, world, camera, render_w, render_h, local_player);
+        // Pre-compute screen positions while we still have the main draw handle
+        let hud_pre = hud::precompute_hud(&d, world, camera, render_w, render_h);
+        let fps_text = format!("{} FPS", d.get_fps());
 
-        // Card pick / match over drawn into ui_target with CRT scanlines
-        if matches!(world.state, GameState::CardPick { .. }) || matches!(world.state, GameState::MatchOver { .. }) {
-            {
-                let mut t = d.begin_texture_mode(thread, &mut crt.ui_target);
-                t.clear_background(Color::new(0, 0, 0, 0));
+        // All UI into ui_target → CRT scanlines, no vignette
+        {
+            let mut t = d.begin_texture_mode(thread, &mut crt.ui_target);
+            t.clear_background(Color::new(0, 0, 0, 0));
 
-                if matches!(world.state, GameState::CardPick { .. }) {
-                    render_cards::draw_card_pick(&mut *t, world, card_anim, render_w, render_h);
-                }
+            hud::draw_hud(&mut *t, world, &hud_pre, render_w, render_h, local_player);
 
-                if matches!(world.state, GameState::MatchOver { .. }) {
-                    render_cards::draw_match_over(&mut *t, world, render_w, render_h);
-                    if let Some(btns) = match_over_btns {
-                        render_cards::draw_match_over_buttons(&mut *t, render_w, render_h, btns.selected, btns.waiting, btns.theme, btns.time);
-                    }
+            if matches!(world.state, GameState::CardPick { .. }) {
+                render_cards::draw_card_pick(&mut *t, world, card_anim, render_w, render_h);
+            }
+
+            if matches!(world.state, GameState::MatchOver { .. }) {
+                render_cards::draw_match_over(&mut *t, world, render_w, render_h);
+                if let Some(btns) = match_over_btns {
+                    render_cards::draw_match_over_buttons(&mut *t, render_w, render_h, btns.selected, btns.waiting, btns.theme, btns.time);
                 }
             }
-            {
-                let mut s = d.begin_shader_mode(&mut crt.shader_ui);
-                s.draw_texture_rec(
-                    crt.ui_target.texture(), tex_rect(&crt.ui_target),
-                    Vector2::new(0.0, 0.0), Color::WHITE,
-                );
-            }
+
+            t.draw_text(&fps_text, 10, 10, 20, theme.item_color);
+        }
+        {
+            let mut s = d.begin_shader_mode(&mut crt.shader_ui);
+            s.draw_texture_rec(
+                crt.ui_target.texture(), tex_rect(&crt.ui_target),
+                Vector2::new(0.0, 0.0), Color::WHITE,
+            );
         }
 
         // Dev overlay: NO CRT (user requested)
@@ -514,9 +615,6 @@ pub fn draw_world(
                 .unwrap_or_default();
             draw_dev_overlay(&mut d, render_w, render_h, &held);
         }
-
-        let fps_text = format!("{} FPS", d.get_fps());
-        d.draw_text(&fps_text, 10, 10, 20, theme.item_color);
     }
 }
 

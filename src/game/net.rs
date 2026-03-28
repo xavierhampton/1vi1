@@ -15,6 +15,7 @@ pub enum GameEvent {
     Jumped { owner: u8 },
     Landed { owner: u8 },
     Dashed { owner: u8 },
+    LavaSizzle { x: f32, y: f32, z: f32 },
 }
 
 // ── Snapshot types ───────────────────────────────────────────────────────────
@@ -111,6 +112,7 @@ pub struct WorldSnapshot {
     // Entity snapshots
     pub sticky_bombs: Vec<StickyBombSnapshot>,
     pub healing_zones: Vec<HealingZoneSnapshot>,
+    pub elapsed_time: f32,
 }
 
 // ── Encode/decode GameInput ──────────────────────────────────────────────────
@@ -317,6 +319,12 @@ pub fn encode_snapshot(snap: &WorldSnapshot) -> Vec<u8> {
                 payload.push(7);
                 payload.push(*owner);
             }
+            GameEvent::LavaSizzle { x, y, z } => {
+                payload.push(8);
+                push_f32(&mut payload, *x);
+                push_f32(&mut payload, *y);
+                push_f32(&mut payload, *z);
+            }
         }
     }
 
@@ -351,6 +359,8 @@ pub fn encode_snapshot(snap: &WorldSnapshot) -> Vec<u8> {
         payload.push(h.owner);
         push_f32(&mut payload, h.lifetime);
     }
+
+    push_f32(&mut payload, snap.elapsed_time);
 
     let len = payload.len() as u16;
     let mut out = Vec::with_capacity(2 + payload.len());
@@ -519,6 +529,13 @@ pub fn decode_snapshot(data: &[u8]) -> Option<WorldSnapshot> {
                     _ => GameEvent::Dashed { owner },
                 });
             }
+            8 => {
+                if pos + 12 > data.len() { return None; }
+                let x = read_f32(data, &mut pos);
+                let y = read_f32(data, &mut pos);
+                let z = read_f32(data, &mut pos);
+                events.push(GameEvent::LavaSizzle { x, y, z });
+            }
             _ => {}
         }
     }
@@ -578,6 +595,8 @@ pub fn decode_snapshot(data: &[u8]) -> Option<WorldSnapshot> {
         }
     }
 
+    let elapsed_time = if pos + 4 <= data.len() { read_f32(data, &mut pos) } else { 0.0 };
+
     Some(WorldSnapshot {
         state_tag,
         state_timer,
@@ -600,6 +619,7 @@ pub fn decode_snapshot(data: &[u8]) -> Option<WorldSnapshot> {
         match_timer,
         sticky_bombs,
         healing_zones,
+        elapsed_time,
     })
 }
 

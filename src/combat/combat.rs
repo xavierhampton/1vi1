@@ -2,6 +2,7 @@ use raylib::prelude::{Color, Vector3};
 
 use crate::combat::bullet::{Bullet, BULLET_GRAVITY};
 use crate::game::net::GameEvent;
+use crate::level::level::BouncePad;
 use crate::level::platforms::Platform;
 use crate::physics::collision::AABB;
 use crate::player::player::{Player, HIT_FLASH_DURATION};
@@ -30,6 +31,7 @@ pub fn update_bullets(
     bullets: &mut Vec<Bullet>,
     players: &mut [Player],
     platforms: &[Platform],
+    bounce_pads: &[BouncePad],
     dt: f32,
 ) -> (Vec<GameEvent>, Vec<StickyBombData>, Vec<BulletHitInfo>) {
     let mut events = Vec::new();
@@ -98,49 +100,78 @@ pub fn update_bullets(
             ),
         };
 
-        // Platform collision
-        for platform in platforms {
-            if swept.overlaps(&platform.aabb) {
-                if bullet.sticky {
-                    sticky_queue.push(StickyBombData {
-                        position: bullet.prev_position,
-                        owner: bullet.owner,
-                        damage: bullet.damage,
-                        stuck_to: None,
-                        color: bullet.color,
-                    });
-                    bullet.lifetime = 0.0;
-                } else if bullet.bounces_remaining > 0 {
-                    bullet.bounces_remaining -= 1;
-                    let pen_left = baabb.max.x - platform.aabb.min.x;
-                    let pen_right = platform.aabb.max.x - baabb.min.x;
-                    let pen_bottom = baabb.max.y - platform.aabb.min.y;
-                    let pen_top = platform.aabb.max.y - baabb.min.y;
-                    if pen_left.min(pen_right) < pen_bottom.min(pen_top) {
-                        bullet.velocity.x = -bullet.velocity.x;
-                        bullet.position.x = bullet.prev_position.x;
-                    } else {
-                        bullet.velocity.y = -bullet.velocity.y;
-                        bullet.position.y = bullet.prev_position.y;
-                    }
-                    events.push(GameEvent::TerrainHit {
-                        x: bullet.position.x, y: bullet.position.y, z: bullet.position.z,
-                        r: bullet.color.r, g: bullet.color.g, b: bullet.color.b,
-                    });
+        // Bounce pad reflection FIRST — bullets bounce off pads before walls can eat them
+        let mut hit_pad = false;
+        for pad in bounce_pads {
+            if swept.overlaps(&pad.aabb) {
+                let pen_left = baabb.max.x - pad.aabb.min.x;
+                let pen_right = pad.aabb.max.x - baabb.min.x;
+                let pen_bottom = baabb.max.y - pad.aabb.min.y;
+                let pen_top = pad.aabb.max.y - baabb.min.y;
+                if pen_left.min(pen_right) < pen_bottom.min(pen_top) {
+                    bullet.velocity.x = -bullet.velocity.x;
+                    bullet.position.x = bullet.prev_position.x;
                 } else {
-                    events.push(GameEvent::TerrainHit {
-                        x: bullet.prev_position.x, y: bullet.prev_position.y, z: bullet.prev_position.z,
-                        r: bullet.color.r, g: bullet.color.g, b: bullet.color.b,
-                    });
-                    let expl_radius = (bullet.damage / 25.0).max(0.3);
-                    events.push(GameEvent::Explosion {
-                        x: bullet.prev_position.x, y: bullet.prev_position.y, z: bullet.prev_position.z,
-                        r: bullet.color.r, g: bullet.color.g, b: bullet.color.b,
-                        radius: expl_radius,
-                    });
-                    bullet.lifetime = 0.0;
+                    bullet.velocity.y = -bullet.velocity.y;
+                    bullet.position.y = bullet.prev_position.y;
                 }
+                let speed_boost = 1.3;
+                bullet.velocity.x *= speed_boost;
+                bullet.velocity.y *= speed_boost;
+                events.push(GameEvent::TerrainHit {
+                    x: bullet.position.x, y: bullet.position.y, z: bullet.position.z,
+                    r: 0, g: 220, b: 255,
+                });
+                hit_pad = true;
                 break;
+            }
+        }
+
+        // Platform collision (skip if already bounced off a pad this frame)
+        if !hit_pad {
+            for platform in platforms {
+                if swept.overlaps(&platform.aabb) {
+                    if bullet.sticky {
+                        sticky_queue.push(StickyBombData {
+                            position: bullet.prev_position,
+                            owner: bullet.owner,
+                            damage: bullet.damage,
+                            stuck_to: None,
+                            color: bullet.color,
+                        });
+                        bullet.lifetime = 0.0;
+                    } else if bullet.bounces_remaining > 0 {
+                        bullet.bounces_remaining -= 1;
+                        let pen_left = baabb.max.x - platform.aabb.min.x;
+                        let pen_right = platform.aabb.max.x - baabb.min.x;
+                        let pen_bottom = baabb.max.y - platform.aabb.min.y;
+                        let pen_top = platform.aabb.max.y - baabb.min.y;
+                        if pen_left.min(pen_right) < pen_bottom.min(pen_top) {
+                            bullet.velocity.x = -bullet.velocity.x;
+                            bullet.position.x = bullet.prev_position.x;
+                        } else {
+                            bullet.velocity.y = -bullet.velocity.y;
+                            bullet.position.y = bullet.prev_position.y;
+                        }
+                        events.push(GameEvent::TerrainHit {
+                            x: bullet.position.x, y: bullet.position.y, z: bullet.position.z,
+                            r: bullet.color.r, g: bullet.color.g, b: bullet.color.b,
+                        });
+                    } else {
+                        events.push(GameEvent::TerrainHit {
+                            x: bullet.prev_position.x, y: bullet.prev_position.y, z: bullet.prev_position.z,
+                            r: bullet.color.r, g: bullet.color.g, b: bullet.color.b,
+                        });
+                        let expl_radius = (bullet.damage / 25.0).max(0.3);
+                        events.push(GameEvent::Explosion {
+                            x: bullet.prev_position.x, y: bullet.prev_position.y, z: bullet.prev_position.z,
+                            r: bullet.color.r, g: bullet.color.g, b: bullet.color.b,
+                            radius: expl_radius,
+                        });
+                        bullet.lifetime = 0.0;
+                    }
+                    break;
+                }
             }
         }
 

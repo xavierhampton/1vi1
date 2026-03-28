@@ -5,7 +5,7 @@ use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
 
 use raylib::prelude::*;
 
-use crate::combat::particles::{spawn_from_events, update_particles};
+use crate::combat::particles::{spawn_from_events, spawn_lava_bubble, update_particles};
 use crate::game::net::{self, GameEvent, WorldSnapshot};
 use crate::game::state::GameState;
 use crate::game::world::World;
@@ -205,6 +205,16 @@ impl GameServer {
 
         // 5. Update particles locally on the host (for rendering)
         update_particles(&mut self.world.particles, dt);
+
+        // 6. Ambient lava bubbles (cosmetic)
+        for pool in &self.world.level.lava_pools {
+            if self.world.rng.next_f32() < dt * 4.0 {
+                let x = self.world.rng.range(pool.aabb.min.x, pool.aabb.max.x);
+                let y = pool.aabb.max.y;
+                spawn_lava_bubble(&mut self.world.particles, &mut self.world.rng,
+                    Vector3::new(x, y, 0.0));
+            }
+        }
     }
 
     pub fn notify_leaving(&mut self, name: &str) {

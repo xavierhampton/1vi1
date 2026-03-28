@@ -16,6 +16,14 @@ pub struct LevelDef {
     pub name: String,
     pub spawn_points: Vec<[f32; 2]>,
     pub platforms: Vec<PlatformDef>,
+    #[serde(default)]
+    pub sawblades: Vec<SawbladeDef>,
+    #[serde(default)]
+    pub bounce_pads: Vec<BouncePadDef>,
+    #[serde(default)]
+    pub lava_pools: Vec<LavaPoolDef>,
+    #[serde(default)]
+    pub lasers: Vec<LaserBeamDef>,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -26,11 +34,84 @@ pub struct PlatformDef {
     pub max: [f32; 2],
 }
 
+#[derive(Serialize, Deserialize, Clone)]
+pub struct SawbladeDef {
+    pub pos: [f32; 2],
+    #[serde(default = "default_saw_radius")]
+    pub radius: f32,
+    /// Speed in radians per second (default 4.0)
+    #[serde(default = "default_saw_speed")]
+    pub speed: f32,
+}
+
+fn default_saw_radius() -> f32 { 1.0 }
+fn default_saw_speed() -> f32 { 4.0 }
+
+#[derive(Serialize, Deserialize, Clone)]
+pub struct BouncePadDef {
+    pub min: [f32; 2],
+    pub max: [f32; 2],
+    #[serde(default = "default_pad_strength")]
+    pub strength: f32,
+}
+
+fn default_pad_strength() -> f32 { 25.0 }
+
+#[derive(Serialize, Deserialize, Clone)]
+pub struct LavaPoolDef {
+    pub min: [f32; 2],
+    pub max: [f32; 2],
+    #[serde(default = "default_lava_dps")]
+    pub dps: f32,
+}
+
+fn default_lava_dps() -> f32 { 40.0 }
+
+#[derive(Serialize, Deserialize, Clone)]
+pub struct LaserBeamDef {
+    pub start: [f32; 2],
+    pub end: [f32; 2],
+    #[serde(default = "default_laser_on")]
+    pub on_time: f32,
+    #[serde(default = "default_laser_off")]
+    pub off_time: f32,
+}
+
+fn default_laser_on() -> f32 { 2.0 }
+fn default_laser_off() -> f32 { 2.0 }
+
 // ── Runtime level ───────────────────────────────────────────────────────────
+
+pub struct Sawblade {
+    pub position: Vector3,
+    pub radius: f32,
+    pub speed: f32,
+}
+
+pub struct BouncePad {
+    pub aabb: crate::physics::collision::AABB,
+    pub strength: f32,
+}
+
+pub struct LavaPool {
+    pub aabb: crate::physics::collision::AABB,
+    pub dps: f32,
+}
+
+pub struct LaserBeam {
+    pub start: Vector3,
+    pub end: Vector3,
+    pub on_time: f32,
+    pub off_time: f32,
+}
 
 pub struct Level {
     pub platforms: Vec<Platform>,
     pub spawn_points: Vec<Vector3>,
+    pub sawblades: Vec<Sawblade>,
+    pub bounce_pads: Vec<BouncePad>,
+    pub lava_pools: Vec<LavaPool>,
+    pub lasers: Vec<LaserBeam>,
     pub id: u8,
 }
 
@@ -54,9 +135,54 @@ impl LevelDef {
             .iter()
             .map(|s| Vector3::new(s[0], s[1], 0.0))
             .collect();
+        let sawblades = self
+            .sawblades
+            .iter()
+            .map(|s| Sawblade {
+                position: Vector3::new(s.pos[0], s.pos[1], 0.0),
+                radius: s.radius,
+                speed: s.speed,
+            })
+            .collect();
+        let bounce_pads = self
+            .bounce_pads
+            .iter()
+            .map(|b| BouncePad {
+                aabb: crate::physics::collision::AABB::new(
+                    Vector3::new(b.min[0], b.min[1], -2.0),
+                    Vector3::new(b.max[0], b.max[1], 2.0),
+                ),
+                strength: b.strength,
+            })
+            .collect();
+        let lava_pools = self
+            .lava_pools
+            .iter()
+            .map(|l| LavaPool {
+                aabb: crate::physics::collision::AABB::new(
+                    Vector3::new(l.min[0], l.min[1], -2.0),
+                    Vector3::new(l.max[0], l.max[1], 2.0),
+                ),
+                dps: l.dps,
+            })
+            .collect();
+        let lasers = self
+            .lasers
+            .iter()
+            .map(|l| LaserBeam {
+                start: Vector3::new(l.start[0], l.start[1], 0.0),
+                end: Vector3::new(l.end[0], l.end[1], 0.0),
+                on_time: l.on_time,
+                off_time: l.off_time,
+            })
+            .collect();
         Level {
             platforms,
             spawn_points,
+            sawblades,
+            bounce_pads,
+            lava_pools,
+            lasers,
             id,
         }
     }
@@ -108,6 +234,10 @@ pub fn level_by_id(id: u8) -> Level {
                 Vector3::new(-10.0, 0.0, 0.0),
                 Vector3::new(10.0, 0.0, 0.0),
             ],
+            sawblades: vec![],
+            bounce_pads: vec![],
+            lava_pools: vec![],
+            lasers: vec![],
             id: 0,
         }
     }
