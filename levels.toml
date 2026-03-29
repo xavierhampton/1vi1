@@ -1,6 +1,6 @@
 [[level]]
 name = "Jumper"
-enabled = false
+enabled = true
 spawn_points = [
     [
     -7.0,
@@ -211,7 +211,7 @@ strength = 25.0
 
 [[level]]
 name = "Buckets"
-enabled = false
+enabled = true
 spawn_points = [
     [
     -19.5,
@@ -720,7 +720,7 @@ off_time = 2.0
 
 [[level]]
 name = "Bunkers"
-enabled = false
+enabled = true
 spawn_points = [
     [
     -7.0,
@@ -1127,7 +1127,650 @@ max = [
 dps = 40.0
 
 [[level]]
-name = "Level 4"
+name = "Creepy"
+enabled = true
+spawn_points = [
+    [
+    4.0,
+    7.5,
+],
+    [
+    -4.0,
+    7.5,
+],
+    [
+    -7.0,
+    1.5,
+],
+    [
+    7.0,
+    1.5,
+],
+]
+lasers = []
+
+[[level.platforms]]
+type = "platform"
+min = [
+    -12.0,
+    -1.0,
+]
+max = [
+    12.0,
+    0.0,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    -12.0,
+    -0.0,
+]
+max = [
+    -11.0,
+    20.0,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    11.0,
+    0.0,
+]
+max = [
+    12.0,
+    20.0,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    -11.0,
+    19.0,
+]
+max = [
+    11.0,
+    20.0,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    -1.0,
+    6.0,
+]
+max = [
+    1.0,
+    8.0,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    1.0,
+    6.0,
+]
+max = [
+    3.0,
+    8.0,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    -3.0,
+    6.0,
+]
+max = [
+    -1.0,
+    8.0,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    -5.0,
+    4.0,
+]
+max = [
+    -3.0,
+    6.0,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    3.0,
+    4.0,
+]
+max = [
+    5.0,
+    6.0,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    -7.0,
+    12.0,
+]
+max = [
+    -4.0,
+    13.0,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    4.0,
+    12.0,
+]
+max = [
+    7.0,
+    13.0,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    -7.0,
+    13.0,
+]
+max = [
+    -4.0,
+    15.0,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    4.0,
+    13.0,
+]
+max = [
+    7.0,
+    15.0,
+]
+
+[[level.bounce_pads]]
+min = [
+    4.5,
+    4.0,
+]
+max = [
+    5.0,
+    6.0,
+]
+strength = 25.0
+
+[[level.bounce_pads]]
+min = [
+    9.0,
+    -0.5,
+]
+max = [
+    11.0,
+    -0.0,
+]
+strength = 25.0
+
+[[level.bounce_pads]]
+min = [
+    -11.0,
+    -0.5,
+]
+max = [
+    -9.0,
+    -0.0,
+]
+strength = 25.0
+
+[[level.bounce_pads]]
+min = [
+    -11.5,
+    8.0,
+]
+max = [
+    -11.0,
+    11.0,
+]
+strength = 25.0
+
+[[level.bounce_pads]]
+min = [
+    11.0,
+    8.0,
+]
+max = [
+    11.5,
+    11.0,
+]
+strength = 25.0
+
+[[level.bounce_pads]]
+min = [
+    -1.0,
+    7.5,
+]
+max = [
+    1.0,
+    8.0,
+]
+strength = 25.0
+
+[[level.bounce_pads]]
+min = [
+    -5.0,
+    4.0,
+]
+max = [
+    -4.5,
+    6.0,
+]
+strength = 25.0
+
+[[level.lava_pools]]
+min = [
+    -7.0,
+    12.0,
+]
+max = [
+    -4.0,
+    15.0,
+]
+dps = 40.0
+
+[[level.lava_pools]]
+min = [
+    4.0,
+    12.0,
+]
+max = [
+    7.0,
+    15.0,
+]
+dps = 40.0
+
+[[level]]
+name = "Elevator"
+enabled = true
+spawn_points = [
+    [
+    -7.0,
+    4.5,
+],
+    [
+    7.0,
+    4.5,
+],
+    [
+    -7.0,
+    12.5,
+],
+    [
+    7.0,
+    12.5,
+],
+]
+lava_pools = []
+lasers = []
+
+[[level.platforms]]
+type = "platform"
+min = [
+    11.0,
+    -1.0,
+]
+max = [
+    12.0,
+    18.0,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    -12.0,
+    -1.0,
+]
+max = [
+    -11.0,
+    18.0,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    -8.0,
+    3.5,
+]
+max = [
+    -2.0,
+    4.0,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    2.0,
+    3.5,
+]
+max = [
+    8.0,
+    4.0,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    -8.0,
+    7.5,
+]
+max = [
+    -2.0,
+    8.0,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    -8.0,
+    11.5,
+]
+max = [
+    -2.0,
+    12.0,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    -8.0,
+    15.5,
+]
+max = [
+    -2.0,
+    16.0,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    2.0,
+    7.5,
+]
+max = [
+    8.0,
+    8.0,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    2.0,
+    11.5,
+]
+max = [
+    8.0,
+    12.0,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    2.0,
+    15.5,
+]
+max = [
+    8.0,
+    16.0,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    -11.0,
+    -1.0,
+]
+max = [
+    11.0,
+    -0.0,
+]
+
+[[level.bounce_pads]]
+min = [
+    -11.5,
+    -0.0,
+]
+max = [
+    -11.0,
+    18.0,
+]
+strength = 25.0
+
+[[level.bounce_pads]]
+min = [
+    11.0,
+    0.0,
+]
+max = [
+    11.5,
+    18.0,
+]
+strength = 25.0
+
+[[level.bounce_pads]]
+min = [
+    -11.5,
+    -0.5,
+]
+max = [
+    -9.0,
+    -0.0,
+]
+strength = 25.0
+
+[[level.bounce_pads]]
+min = [
+    9.0,
+    -0.5,
+]
+max = [
+    11.5,
+    0.0,
+]
+strength = 25.0
+
+[[level.bounce_pads]]
+min = [
+    -1.0,
+    -0.5,
+]
+max = [
+    1.0,
+    -0.0,
+]
+strength = 25.0
+
+[[level]]
+name = "Illuminating"
+enabled = true
+spawn_points = [
+    [
+    -14.5,
+    4.0,
+],
+    [
+    14.5,
+    4.0,
+],
+    [
+    -10.0,
+    11.0,
+],
+    [
+    10.0,
+    11.0,
+],
+]
+lava_pools = []
+lasers = []
+
+[[level.platforms]]
+type = "platform"
+min = [
+    -11.0,
+    -1.0,
+]
+max = [
+    11.0,
+    -0.0,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    -19.0,
+    -1.0,
+]
+max = [
+    -11.0,
+    -0.0,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    11.0,
+    -1.0,
+]
+max = [
+    19.0,
+    -0.0,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    -16.0,
+    3.0,
+]
+max = [
+    -3.0,
+    3.5,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    3.0,
+    3.0,
+]
+max = [
+    16.0,
+    3.5,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    -13.0,
+    6.5,
+]
+max = [
+    -6.0,
+    7.0,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    6.0,
+    6.5,
+]
+max = [
+    13.0,
+    7.0,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    -11.0,
+    10.0,
+]
+max = [
+    -8.0,
+    10.5,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    8.0,
+    10.0,
+]
+max = [
+    11.0,
+    10.5,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    -8.0,
+    13.5,
+]
+max = [
+    -2.0,
+    14.0,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    2.0,
+    13.5,
+]
+max = [
+    8.0,
+    14.0,
+]
+
+[[level.bounce_pads]]
+min = [
+    -2.0,
+    -0.5,
+]
+max = [
+    2.0,
+    0.0,
+]
+strength = 25.0
+
+[[level.bounce_pads]]
+min = [
+    -19.0,
+    -0.5,
+]
+max = [
+    -17.0,
+    -0.0,
+]
+strength = 25.0
+
+[[level.bounce_pads]]
+min = [
+    17.0,
+    -0.5,
+]
+max = [
+    19.0,
+    -0.0,
+]
+strength = 25.0
+
+[[level]]
+name = "Towers"
 enabled = true
 spawn_points = [
     [
@@ -1147,17 +1790,334 @@ spawn_points = [
     0.0,
 ],
 ]
-bounce_pads = []
-lava_pools = []
 lasers = []
 
 [[level.platforms]]
 type = "platform"
 min = [
     -12.0,
+    -0.5,
+]
+max = [
+    13.0,
+    -0.0,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
     -1.0,
+    0.0,
+]
+max = [
+    1.0,
+    5.0,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    -3.0,
+    4.5,
+]
+max = [
+    -1.0,
+    5.0,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    1.0,
+    4.5,
+]
+max = [
+    3.0,
+    5.0,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    9.5,
+    3.0,
+]
+max = [
+    10.0,
+    13.0,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    6.0,
+    3.5,
+]
+max = [
+    6.5,
+    13.0,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    6.0,
+    3.0,
+]
+max = [
+    6.5,
+    3.5,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    -6.5,
+    3.0,
+]
+max = [
+    -6.0,
+    13.0,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    -10.0,
+    3.0,
+]
+max = [
+    -9.5,
+    13.0,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    -6.0,
+    12.5,
+]
+max = [
+    -4.0,
+    13.0,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    -12.0,
+    12.5,
+]
+max = [
+    -10.0,
+    13.0,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    4.0,
+    12.5,
+]
+max = [
+    6.0,
+    13.0,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    10.0,
+    12.5,
 ]
 max = [
     12.0,
+    13.0,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    13.0,
+    -0.5,
+]
+max = [
+    13.5,
+    -0.0,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    13.0,
     0.0,
 ]
+max = [
+    13.5,
+    6.0,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    13.5,
+    5.5,
+]
+max = [
+    17.0,
+    6.0,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    -13.0,
+    -0.5,
+]
+max = [
+    -12.0,
+    -0.0,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    -13.5,
+    -0.5,
+]
+max = [
+    -13.0,
+    6.0,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    -17.0,
+    5.5,
+]
+max = [
+    -13.5,
+    6.0,
+]
+
+[[level.bounce_pads]]
+min = [
+    -6.5,
+    5.0,
+]
+max = [
+    -6.0,
+    10.5,
+]
+strength = 25.0
+
+[[level.bounce_pads]]
+min = [
+    6.0,
+    5.0,
+]
+max = [
+    6.5,
+    10.5,
+]
+strength = 25.0
+
+[[level.bounce_pads]]
+min = [
+    -1.0,
+    4.5,
+]
+max = [
+    1.0,
+    5.0,
+]
+strength = 25.0
+
+[[level.bounce_pads]]
+min = [
+    7.0,
+    -0.5,
+]
+max = [
+    9.0,
+    -0.0,
+]
+strength = 25.0
+
+[[level.bounce_pads]]
+min = [
+    -9.0,
+    -0.5,
+]
+max = [
+    -7.0,
+    -0.0,
+]
+strength = 25.0
+
+[[level.bounce_pads]]
+min = [
+    -17.0,
+    5.5,
+]
+max = [
+    -14.5,
+    6.0,
+]
+strength = 25.0
+
+[[level.bounce_pads]]
+min = [
+    14.5,
+    5.5,
+]
+max = [
+    17.0,
+    6.0,
+]
+strength = 25.0
+
+[[level.lava_pools]]
+min = [
+    1.0,
+    -0.5,
+]
+max = [
+    3.0,
+    -0.0,
+]
+dps = 40.0
+
+[[level.lava_pools]]
+min = [
+    -3.0,
+    -0.5,
+]
+max = [
+    -1.0,
+    0.0,
+]
+dps = 40.0
+
+[[level.lava_pools]]
+min = [
+    -13.5,
+    -0.5,
+]
+max = [
+    -13.0,
+    3.0,
+]
+dps = 40.0
+
+[[level.lava_pools]]
+min = [
+    13.0,
+    -0.5,
+]
+max = [
+    13.5,
+    3.0,
+]
+dps = 40.0
