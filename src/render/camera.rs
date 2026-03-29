@@ -27,6 +27,6 @@ pub fn game_camera(world: &World) -> Camera3D {
         Vector3::new(mid_x, mid_y, cam_z),
         Vector3::new(mid_x, mid_y, 0.0),
         Vector3::new(0.0, 1.0, 0.0),
-        50.0,
+        60.0,
     )
 }

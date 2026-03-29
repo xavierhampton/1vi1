@@ -880,9 +880,19 @@ impl Editor {
                 d.draw_rectangle(sx + 2, iy, SIDEBAR_WIDTH - 4, item_h, Color::new(35, 35, 50, 255));
             }
 
-            let label = format!("{}. {}", i + 1, lev.name);
+            let label = if lev.enabled {
+                format!("{}. {}", i + 1, lev.name)
+            } else {
+                format!("{}. {} (off)", i + 1, lev.name)
+            };
             let spawn_ok = lev.spawn_points.len() == REQUIRED_SPAWNS;
-            let name_col = if spawn_ok { TEXT_COLOR } else { Color::new(255, 180, 80, 255) };
+            let name_col = if !lev.enabled {
+                Color::new(100, 100, 110, 160)
+            } else if spawn_ok {
+                TEXT_COLOR
+            } else {
+                Color::new(255, 180, 80, 255)
+            };
             d.draw_text(&label, sx + 12, iy + 6, 16, name_col);
 
             if !spawn_ok {
@@ -909,6 +919,7 @@ impl Editor {
         if self.draw_button(d, sx + 10, y, btn_w, btn_h, "New Level", BTN_COLOR, BTN_HOVER) {
             self.levels.push(LevelDef {
                 name: format!("Level {}", self.levels.len() + 1),
+                enabled: true,
                 spawn_points: vec![
                     [-6.0, 0.0],
                     [6.0, 0.0],
@@ -932,7 +943,7 @@ impl Editor {
                         max: [15.0, 12.0],
                     },
                 ],
-                sawblades: vec![],
+                sawblades: vec![], // kept for TOML compat
                 bounce_pads: vec![],
                 lava_pools: vec![],
                 lasers: vec![],
@@ -952,6 +963,21 @@ impl Editor {
                 self.current += 1;
                 self.dirty = true;
                 self.set_status("Level duplicated");
+            }
+        }
+        y += btn_h + 4;
+
+        // Enable/Disable toggle
+        {
+            let is_enabled = self.levels.get(self.current).map_or(true, |l| l.enabled);
+            let label = if is_enabled { "Enabled  [ON]" } else { "Disabled [OFF]" };
+            let col = if is_enabled { Color::new(40, 70, 40, 255) } else { Color::new(70, 40, 40, 255) };
+            let hov = if is_enabled { Color::new(50, 90, 50, 255) } else { Color::new(90, 50, 50, 255) };
+            if self.draw_button(d, sx + 10, y, btn_w, btn_h, label, col, hov) {
+                if let Some(lev) = self.levels.get_mut(self.current) {
+                    lev.enabled = !lev.enabled;
+                    self.dirty = true;
+                }
             }
         }
         y += btn_h + 4;

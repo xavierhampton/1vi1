@@ -158,7 +158,7 @@ impl<'aud> AudioManager<'aud> {
     }
 
     fn mus_vol(&self) -> f32 {
-        self.master_volume * self.music_volume * 0.10
+        self.master_volume * self.music_volume * 0.07
     }
 
     fn play_sfx(&self, sfx: &Option<Sound>) {

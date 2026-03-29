@@ -14,9 +14,12 @@ pub struct LevelsFile {
 #[derive(Serialize, Deserialize, Clone)]
 pub struct LevelDef {
     pub name: String,
+    #[serde(default = "default_enabled")]
+    pub enabled: bool,
     pub spawn_points: Vec<[f32; 2]>,
     pub platforms: Vec<PlatformDef>,
-    #[serde(default)]
+    #[allow(dead_code)]
+    #[serde(default, skip_serializing)]
     pub sawblades: Vec<SawbladeDef>,
     #[serde(default)]
     pub bounce_pads: Vec<BouncePadDef>,
@@ -25,6 +28,8 @@ pub struct LevelDef {
     #[serde(default)]
     pub lasers: Vec<LaserBeamDef>,
 }
+
+fn default_enabled() -> bool { true }
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct PlatformDef {
@@ -82,12 +87,6 @@ fn default_laser_off() -> f32 { 2.0 }
 
 // ── Runtime level ───────────────────────────────────────────────────────────
 
-pub struct Sawblade {
-    pub position: Vector3,
-    pub radius: f32,
-    pub speed: f32,
-}
-
 pub struct BouncePad {
     pub aabb: crate::physics::collision::AABB,
     pub strength: f32,
@@ -108,7 +107,6 @@ pub struct LaserBeam {
 pub struct Level {
     pub platforms: Vec<Platform>,
     pub spawn_points: Vec<Vector3>,
-    pub sawblades: Vec<Sawblade>,
     pub bounce_pads: Vec<BouncePad>,
     pub lava_pools: Vec<LavaPool>,
     pub lasers: Vec<LaserBeam>,
@@ -134,15 +132,6 @@ impl LevelDef {
             .spawn_points
             .iter()
             .map(|s| Vector3::new(s[0], s[1], 0.0))
-            .collect();
-        let sawblades = self
-            .sawblades
-            .iter()
-            .map(|s| Sawblade {
-                position: Vector3::new(s.pos[0], s.pos[1], 0.0),
-                radius: s.radius,
-                speed: s.speed,
-            })
             .collect();
         let bounce_pads = self
             .bounce_pads
@@ -179,7 +168,6 @@ impl LevelDef {
         Level {
             platforms,
             spawn_points,
-            sawblades,
             bounce_pads,
             lava_pools,
             lasers,
@@ -208,14 +196,50 @@ fn load_levels_file() -> LevelsFile {
     })
 }
 
-// ── Public API (unchanged signatures) ───────────────────────────────────────
+// ── Level queue (no repeats until all enabled maps played) ─────────────────
 
-pub fn random_level(rng_val: u64) -> Level {
-    let file = load_levels_file();
-    let count = file.level.len().max(1);
-    let id = (rng_val % count as u64) as u8;
-    level_by_id(id)
+pub struct LevelQueue {
+    remaining: Vec<u8>, // indices into the levels file
 }
+
+impl LevelQueue {
+    pub fn new() -> Self {
+        Self { remaining: Vec::new() }
+    }
+
+    /// Pick the next level, reshuffling when the queue is exhausted.
+    pub fn next(&mut self, rng_val: u64) -> Level {
+        if self.remaining.is_empty() {
+            self.refill(rng_val);
+        }
+        // If still empty after refill (no enabled levels), fall back
+        if self.remaining.is_empty() {
+            return level_by_id(0);
+        }
+        let id = self.remaining.remove(0);
+        level_by_id(id)
+    }
+
+    fn refill(&mut self, rng_val: u64) {
+        let file = load_levels_file();
+        let mut ids: Vec<u8> = file.level.iter().enumerate()
+            .filter(|(_, l)| l.enabled)
+            .map(|(i, _)| i as u8)
+            .collect();
+        // Fisher-Yates shuffle using rng_val as seed
+        let mut seed = rng_val.max(1);
+        for i in (1..ids.len()).rev() {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            let j = (seed as usize) % (i + 1);
+            ids.swap(i, j);
+        }
+        self.remaining = ids;
+    }
+}
+
+// ── Public API ─────────────────────────────────────────────────────────────
 
 pub fn level_by_id(id: u8) -> Level {
     let file = load_levels_file();
@@ -234,7 +258,6 @@ pub fn level_by_id(id: u8) -> Level {
                 Vector3::new(-10.0, 0.0, 0.0),
                 Vector3::new(10.0, 0.0, 0.0),
             ],
-            sawblades: vec![],
             bounce_pads: vec![],
             lava_pools: vec![],
             lasers: vec![],

@@ -236,7 +236,7 @@ pub fn draw_hud(
         let tw = measure_text(&map_label, font_size);
         let margin_r = 16;
         d.draw_text(&map_label, render_w - margin_r - tw, 12, font_size,
-            Color::new(180, 180, 180, 160));
+            Color::new(230, 230, 240, 220));
     }
 
     // ── Score pips (top right) — squares with thick outlines ───────────
@@ -263,8 +263,13 @@ pub fn draw_hud(
                     d.draw_rectangle(px, row_y, pip_size, pip_size, player.color);
                 }
                 d.draw_rectangle_lines_ex(rect, border,
-                    if filled { player.color }
-                    else { Color::new(player.color.r / 2, player.color.g / 2, player.color.b / 2, 120) });
+                    if filled { Color::new(player.color.r, player.color.g, player.color.b, 255) }
+                    else { Color::new(
+                        (player.color.r as u16 * 3 / 4) as u8,
+                        (player.color.g as u16 * 3 / 4) as u8,
+                        (player.color.b as u16 * 3 / 4) as u8,
+                        200,
+                    ) });
             }
         }
     }

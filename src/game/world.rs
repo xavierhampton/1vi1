@@ -6,7 +6,7 @@ use crate::combat::particles::{spawn_from_events, Particle, Rng};
 use crate::game::cards;
 use crate::game::net::{BulletSnapshot, GameEvent, HealingZoneSnapshot, PlayerSnapshot, StickyBombSnapshot, WorldSnapshot};
 use crate::game::state::GameState;
-use crate::level::level::{self, Level};
+use crate::level::level::{self, Level, LevelQueue};
 use crate::lobby::state::{GameSettings, LobbyState};
 use crate::player::input::PlayerInput;
 use crate::player::movement;
@@ -61,6 +61,7 @@ pub struct World {
     pub game_settings: GameSettings,
     pub latest_events: Vec<GameEvent>, // last frame's events for audio
     pub elapsed_time: f32,
+    pub level_queue: LevelQueue,
 }
 
 impl World {
@@ -70,7 +71,8 @@ impl World {
             .map(|d| d.as_nanos() as u64)
             .unwrap_or(42);
         let mut rng = Rng::new(seed);
-        let level = level::random_level(rng.next());
+        let mut level_queue = LevelQueue::new();
+        let level = level_queue.next(rng.next());
         let count = lobby.slots.len().clamp(2, 4);
         let settings = lobby.settings.clone();
         let starting_hp = if settings.sudden_death { 1.0 } else { settings.starting_hp };
@@ -103,6 +105,7 @@ impl World {
             game_settings: settings,
             latest_events: Vec::new(),
             elapsed_time: 0.0,
+            level_queue,
         }
     }
 
@@ -111,7 +114,7 @@ impl World {
     }
 
     fn reset_round(&mut self) {
-        self.level = level::random_level(self.rng.next());
+        self.level = self.level_queue.next(self.rng.next());
         let base_hp = self.base_hp();
 
         for (i, player) in self.players.iter_mut().enumerate() {
@@ -1032,6 +1035,7 @@ impl World {
                     self.players[i].velocity.y = sign * pad.strength;
                     self.players[i].velocity.x = 0.0;
                 }
+                self.players[i].air_jumps = 0;
             }
         }
 
@@ -1049,7 +1053,7 @@ impl World {
                 let pmax_x = p.position.x + p.size.x / 2.0;
                 let pmin_y = p.position.y;
                 let pmax_y = p.position.y + p.size.y;
-                if pmax_x > pool.aabb.min.x && pmin_x < pool.aabb.max.x
+                if pmax_x > pool.aabb.min.x - lava_margin && pmin_x < pool.aabb.max.x + lava_margin
                     && pmax_y > pool.aabb.min.y - lava_margin && pmin_y < pool.aabb.max.y + lava_margin
                 {
                     self.players[i].hp -= pool.dps * dt;
