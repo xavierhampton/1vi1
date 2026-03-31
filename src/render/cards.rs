@@ -269,13 +269,34 @@ pub fn draw_card_pick(
         let name_color = Color::new(240, 240, 240, alpha);
         d.draw_text(card_def.name, name_x, name_y, name_size, name_color);
 
-        // Description
-        let desc_size = (16.0 * scale) as i32;
-        let desc_w = d.measure_text(card_def.description, desc_size);
-        let desc_x = draw_x as i32 + scaled_w as i32 / 2 - desc_w / 2;
-        let desc_y = (draw_y + scaled_h * 0.70) as i32;
+        // Description (word-wrapped to fit card width)
+        let desc_size = (14.0 * scale) as i32;
         let desc_color = Color::new(180, 180, 180, alpha);
-        d.draw_text(card_def.description, desc_x, desc_y, desc_size, desc_color);
+        let max_w = (scaled_w - inset * 4.0) as i32;
+        let card_cx = draw_x as i32 + scaled_w as i32 / 2;
+        let mut desc_y = (draw_y + scaled_h * 0.70) as i32;
+        let line_h = desc_size + (2.0 * scale) as i32;
+        // Word-wrap
+        let mut line = String::new();
+        for word in card_def.description.split_whitespace() {
+            let test = if line.is_empty() {
+                word.to_string()
+            } else {
+                format!("{} {}", line, word)
+            };
+            if d.measure_text(&test, desc_size) > max_w && !line.is_empty() {
+                let lw = d.measure_text(&line, desc_size);
+                d.draw_text(&line, card_cx - lw / 2, desc_y, desc_size, desc_color);
+                desc_y += line_h;
+                line = word.to_string();
+            } else {
+                line = test;
+            }
+        }
+        if !line.is_empty() {
+            let lw = d.measure_text(&line, desc_size);
+            d.draw_text(&line, card_cx - lw / 2, desc_y, desc_size, desc_color);
+        }
 
         // Chosen flash overlay
         let slam_progress = (anim.slam_t / EXIT_DURATION).clamp(0.0, 1.0);

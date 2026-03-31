@@ -60,6 +60,17 @@ enum AppState {
 }
 
 fn main() {
+    // If assets/ exists next to the executable (release/distribution layout),
+    // switch CWD there so relative paths resolve. Otherwise keep CWD as-is
+    // (works for `cargo run` from the project root).
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            if dir.join("assets").is_dir() {
+                let _ = std::env::set_current_dir(dir);
+            }
+        }
+    }
+
     let args: Vec<String> = std::env::args().collect();
     if args.iter().any(|a| a == "--level") {
         return run_level_editor();

@@ -704,10 +704,10 @@ impl World {
                             }
                         }
                         cards::AbilityEffect::CaseOh => {
-                            // Set shake_timer on all opponents
+                            // Set shake_timer on all opponents — long violent shake
                             for k in 0..self.players.len() {
                                 if k == i { continue; }
-                                self.players[k].shake_timer = 0.5;
+                                self.players[k].shake_timer = 3.0;
                             }
                         }
                         cards::AbilityEffect::Ghost | cards::AbilityEffect::None => {}
@@ -1036,6 +1036,11 @@ impl World {
                     self.players[i].velocity.x = 0.0;
                 }
                 self.players[i].air_jumps = 0;
+                events.push(GameEvent::BouncePadHit {
+                    x: self.players[i].position.x,
+                    y: self.players[i].position.y + self.players[i].size.y * 0.5,
+                    z: 0.0,
+                });
             }
         }
 

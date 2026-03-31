@@ -35,20 +35,22 @@ pub fn draw_world(
     // Compute screen shake offset from local player
     let (shake_x, shake_y) = if let Some(local_p) = world.players.get(local_player as usize) {
         if local_p.shake_timer > 0.0 {
-            let intensity = local_p.shake_timer.min(0.4) * 4.0;
-            (
-                (time * 47.0).sin() * intensity,
-                (time * 61.0).cos() * intensity,
-            )
+            let t = local_p.shake_timer;
+            // Intensity ramps up for first 0.3s then sustains, with random jitter
+            let base = t.min(1.0) * 3.0;
+            // High-frequency multi-axis shake
+            let jitter_x = (time * 73.0).sin() * 0.6 + (time * 137.0).cos() * 0.4;
+            let jitter_y = (time * 97.0).cos() * 0.6 + (time * 151.0).sin() * 0.4;
+            (jitter_x * base, jitter_y * base)
         } else { (0.0, 0.0) }
     } else { (0.0, 0.0) };
 
     // Apply shake to camera
     let mut camera = camera;
-    camera.position.x += shake_x * 0.05;
-    camera.position.y += shake_y * 0.05;
-    camera.target.x += shake_x * 0.05;
-    camera.target.y += shake_y * 0.05;
+    camera.position.x += shake_x * 0.12;
+    camera.position.y += shake_y * 0.12;
+    camera.target.x += shake_x * 0.12;
+    camera.target.y += shake_y * 0.12;
 
     // Draw environment to render texture (CRT + aberration)
     {

@@ -172,7 +172,7 @@ pub const CARD_CATALOG: &[CardDef] = &[
     CardDef { id: CardId::Ghost,       name: "Ghost",             description: "Vanish completely for 3s",            color: (180, 180, 220), icon_glyph: '?', kind: CardKind::Ability { cooldown: 10.0 } },
     CardDef { id: CardId::Screech,     name: "Screech",           description: "Blast all enemies away",              color: (255, 255, 60),  icon_glyph: '^', kind: CardKind::Ability { cooldown: 12.0 } },
     CardDef { id: CardId::BulletManip, name: "Bullet Manipulation", description: "All bullets become yours + homing", color: (60, 160, 255),  icon_glyph: '@', kind: CardKind::Ability { cooldown: 15.0 } },
-    CardDef { id: CardId::CaseOh,      name: "CaseOh",            description: "Violent screen shake for enemies 3s", color: (255, 80, 80),   icon_glyph: 'Q', kind: CardKind::Ability { cooldown: 14.0 } },
+    CardDef { id: CardId::CaseOh,      name: "CaseOh",            description: "EARTHQUAKE! 3s of violent shaking",   color: (255, 80, 80),   icon_glyph: 'Q', kind: CardKind::Ability { cooldown: 14.0 } },
     // ── Basic Powerups ──
     CardDef { id: CardId::GatlingGunner,  name: "Gatling Gunner",   description: "+6 Ammo Capacity",                   color: (180, 180, 60),  icon_glyph: 'G', kind: CardKind::Powerup },
     CardDef { id: CardId::BottomlessBag,  name: "Bottomless Bag",   description: "Infinite Ammo, -30% DMG",            color: (160, 140, 100), icon_glyph: 'B', kind: CardKind::Powerup },

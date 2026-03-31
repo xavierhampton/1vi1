@@ -31,6 +31,7 @@ const SFX_DASH: &str = "assets/sounds/dash.wav";
 
 // SFX — hazards
 const SFX_LAVA_SIZZLE: &str = "assets/sounds/lava_sizzle.wav";
+const SFX_BOUNCE_PAD: &str = "assets/sounds/bounce_pad.wav";
 
 // SFX — weapons
 const SFX_RELOAD: &str = "assets/sounds/reload.wav";
@@ -70,6 +71,7 @@ pub struct AudioManager<'aud> {
 
     // SFX — hazards
     sfx_lava_sizzle: Option<Sound<'aud>>,
+    sfx_bounce_pad: Option<Sound<'aud>>,
 
     // SFX — movement
     sfx_jump: Option<Sound<'aud>>,
@@ -125,6 +127,7 @@ impl<'aud> AudioManager<'aud> {
             sfx_explosion: try_sound(audio, SFX_EXPLOSION),
 
             sfx_lava_sizzle: try_sound(audio, SFX_LAVA_SIZZLE),
+            sfx_bounce_pad: try_sound(audio, SFX_BOUNCE_PAD),
 
             sfx_jump: try_sound(audio, SFX_JUMP),
             sfx_land: try_sound(audio, SFX_LAND),
@@ -255,6 +258,10 @@ impl<'aud> AudioManager<'aud> {
         self.play_sfx(&self.sfx_lava_sizzle);
     }
 
+    pub fn play_bounce_pad(&self) {
+        self.play_sfx(&self.sfx_bounce_pad);
+    }
+
     // ── SFX: movement ───────────────────────────────────────────────────
 
     pub fn play_jump(&self) {
@@ -335,6 +342,7 @@ impl<'aud> AudioManager<'aud> {
                 GameEvent::Landed { .. } => self.play_land(),
                 GameEvent::Dashed { .. } => self.play_dash(),
                 GameEvent::LavaSizzle { .. } => self.play_lava_sizzle(),
+                GameEvent::BouncePadHit { .. } => self.play_bounce_pad(),
             }
         }
     }

@@ -16,6 +16,7 @@ pub enum GameEvent {
     Landed { owner: u8 },
     Dashed { owner: u8 },
     LavaSizzle { x: f32, y: f32, z: f32 },
+    BouncePadHit { x: f32, y: f32, z: f32 },
 }
 
 // ── Snapshot types ───────────────────────────────────────────────────────────
@@ -325,6 +326,12 @@ pub fn encode_snapshot(snap: &WorldSnapshot) -> Vec<u8> {
                 push_f32(&mut payload, *y);
                 push_f32(&mut payload, *z);
             }
+            GameEvent::BouncePadHit { x, y, z } => {
+                payload.push(9);
+                push_f32(&mut payload, *x);
+                push_f32(&mut payload, *y);
+                push_f32(&mut payload, *z);
+            }
         }
     }
 
@@ -529,12 +536,16 @@ pub fn decode_snapshot(data: &[u8]) -> Option<WorldSnapshot> {
                     _ => GameEvent::Dashed { owner },
                 });
             }
-            8 => {
+            8 | 9 => {
                 if pos + 12 > data.len() { return None; }
                 let x = read_f32(data, &mut pos);
                 let y = read_f32(data, &mut pos);
                 let z = read_f32(data, &mut pos);
-                events.push(GameEvent::LavaSizzle { x, y, z });
+                events.push(if etype == 8 {
+                    GameEvent::LavaSizzle { x, y, z }
+                } else {
+                    GameEvent::BouncePadHit { x, y, z }
+                });
             }
             _ => {}
         }

@@ -111,6 +111,23 @@ pub fn spawn_from_events(
             GameEvent::LavaSizzle { x, y, z } => {
                 spawn_lava_sizzle(particles, rng, Vector3::new(*x, *y, *z));
             }
+            GameEvent::BouncePadHit { x, y, z } => {
+                // Cyan burst matching bounce pad color
+                for _ in 0..8 {
+                    let angle = rng.range(0.0, std::f32::consts::TAU);
+                    let speed = rng.range(3.0, 7.0);
+                    let lifetime = rng.range(0.2, 0.5);
+                    particles.push(Particle {
+                        position: Vector3::new(*x, *y, *z),
+                        vel_x: angle.cos() * speed,
+                        vel_y: angle.sin().abs() * speed + 2.0,
+                        lifetime,
+                        max_lifetime: lifetime,
+                        color: Color::new(0, 180_u8.wrapping_add(rng.next() as u8 % 76), 255, 255),
+                        size: rng.range(0.04, 0.09),
+                    });
+                }
+            }
             GameEvent::BulletFired { .. } => {}
             GameEvent::Jumped { .. } => {}
             GameEvent::Landed { .. } => {}

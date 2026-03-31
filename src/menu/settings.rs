@@ -24,7 +24,7 @@ impl Default for UserSettings {
             theme_index: 0,
             master_volume: 0.8,
             sound_volume: 0.5,
-            music_volume: 0.5,
+            music_volume: 0.1,
             target_fps: 144,
             player_name: "Player".into(),
             preview_color: 0,
