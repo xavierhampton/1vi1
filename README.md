@@ -2,7 +2,7 @@
 
 A fast-paced arena shooter where every round lost makes you stronger. Up to 4 players duke it out in quick rounds of platforming and shooting.
 
-<!-- ![gameplay](screenshots/gameplay.png) -->
+![gameplay](demo/demo.gif)
 
 ## Features
 
