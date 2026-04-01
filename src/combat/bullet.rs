@@ -29,6 +29,7 @@ pub struct Bullet {
     pub sticky: bool,
     pub ice: bool,
     pub void_pull: bool,
+    pub hit_players: Vec<usize>,
 }
 
 impl Bullet {
@@ -51,6 +52,7 @@ impl Bullet {
             sticky: false,
             ice: false,
             void_pull: false,
+            hit_players: Vec::new(),
         }
     }
 
@@ -81,6 +83,7 @@ impl Bullet {
             sticky: stats.sticky,
             ice: stats.ice_shots,
             void_pull: stats.void_shots,
+            hit_players: Vec::new(),
         }
     }
 

@@ -229,9 +229,10 @@ pub const CARD_CATALOG: &[CardDef] = &[
     CardDef { id: CardId::AngryBlind,     name: "Angry & Blind",    description: "4x DMG, random bullet direction",        color: (255, 40, 40),   icon_glyph: '!', kind: CardKind::Powerup },
 ];
 
-pub fn random_cards(rng_val: &mut u64, count: usize) -> Vec<u8> {
+pub fn random_cards(rng_val: &mut u64, count: usize, held_cards: &[(CardId, f32)]) -> Vec<u8> {
     let pool: Vec<u8> = CARD_CATALOG.iter()
         .filter(|c| c.is_implemented())
+        .filter(|c| !held_cards.iter().any(|(id, _)| *id == c.id))
         .map(|c| c.id as u8)
         .collect();
     let mut available = pool;

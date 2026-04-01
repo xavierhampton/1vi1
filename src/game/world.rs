@@ -138,8 +138,11 @@ impl World {
             player.upsized_stacks = 0;
             player.rewind_history.clear();
             player.rewind_sample_timer = 0.0;
-            for (_, cd) in player.cards.iter_mut() {
-                *cd = 0.0;
+            for (card_id, cd) in player.cards.iter_mut() {
+                *cd = match card_id {
+                    cards::CardId::Screech => 5.0,
+                    _ => 0.0,
+                };
             }
             player.stats = cards::compute_stats(&player.cards);
             cards::apply_stats(player, &player.stats.clone(), base_hp);
@@ -210,7 +213,8 @@ impl World {
         }
         let current_picker = pick_order.remove(0);
         let mut seed = self.rng.next();
-        let offered = cards::random_cards(&mut seed, 3);
+        let held = &self.players[current_picker as usize].cards;
+        let offered = cards::random_cards(&mut seed, 3, held);
         self.state = GameState::CardPick {
             winner_index: winner_idx,
             current_picker,
@@ -394,6 +398,12 @@ impl World {
                 }
             }
             GameState::CardPick { .. } => {
+                // Update aim for all players during card pick (taunting)
+                for (i, inp) in inputs.iter().enumerate() {
+                    if i < self.players.len() {
+                        self.players[i].aim_dir = inp.aim_dir;
+                    }
+                }
                 self.server_update_card_pick(dt);
             }
             GameState::MatchOver { timer, winner_index, .. } => {
@@ -464,7 +474,8 @@ impl World {
                     let mut remaining = pick_order.clone();
                     remaining.remove(0);
                     let mut seed = self.rng.next();
-                    let new_offered = cards::random_cards(&mut seed, 3);
+                    let held = &self.players[next_picker as usize].cards;
+                    let new_offered = cards::random_cards(&mut seed, 3, held);
                     self.state = GameState::CardPick {
                         winner_index,
                         current_picker: next_picker,
@@ -1341,6 +1352,7 @@ impl World {
                 sticky: false,
                 ice: false,
                 void_pull: false,
+                hit_players: Vec::new(),
             });
         }
 

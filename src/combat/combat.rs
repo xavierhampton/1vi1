@@ -182,6 +182,7 @@ pub fn update_bullets(
         for (i, player) in players.iter().enumerate() {
             if !player.alive || player.ghost_timer > 0.0 || player.invuln_timer > 0.0 { continue; }
             if i == bullet.owner && self_grace { continue; }
+            if bullet.hit_players.contains(&i) { continue; }
 
             if baabb.overlaps(&player.aabb()) {
                 if bullet.sticky {
@@ -228,11 +229,24 @@ pub fn update_bullets(
                     }
                 }
 
-                if !bullet.piercing {
+                if bullet.piercing {
+                    bullet.hit_players.push(i);
+                } else {
                     bullet.lifetime = 0.0;
+                    break;
                 }
-                break;
             }
+        }
+
+        // Clear hit tracking for players the bullet no longer overlaps
+        if bullet.piercing {
+            bullet.hit_players.retain(|&pi| {
+                if pi < players.len() {
+                    baabb.overlaps(&players[pi].aabb())
+                } else {
+                    false
+                }
+            });
         }
     }
 

@@ -157,7 +157,7 @@ impl<'aud> AudioManager<'aud> {
     // ── Volume helpers ───────────────────────────────────────────────────
 
     fn sfx_vol(&self) -> f32 {
-        self.master_volume * self.sound_volume * 0.5
+        self.master_volume * self.sound_volume * 1.5
     }
 
     fn mus_vol(&self) -> f32 {

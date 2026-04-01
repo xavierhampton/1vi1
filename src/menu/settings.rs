@@ -23,7 +23,7 @@ impl Default for UserSettings {
         Self {
             theme_index: 0,
             master_volume: 0.8,
-            sound_volume: 0.5,
+            sound_volume: 0.17,
             music_volume: 0.1,
             target_fps: 144,
             player_name: "Player".into(),
