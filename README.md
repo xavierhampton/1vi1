@@ -1,19 +1,39 @@
 # 1VI1
 
-A fast-paced arena shooter where every round lost makes you stronger. Up to 4 players duke it out in quick rounds of platforming and shooting.
+Lose the round. Pick a card. Come back stronger. Repeat until chaos.
 
-![gameplay](demo/demo.gif)
+
+<p align="center">
+  <img src="demo/demo.gif" alt="gameplay">
+</p>
 
 ## Features
 
-- **Lose rounds, gain power** - Losers draft from 50+ abilities and powerups that stack as the match goes on
-- **Multiplayer** - Up to 4 players over LAN or internet
+- **Lose rounds, gain power** - After each round, the loser drafts a new ability card. Dash, reflect, gravity flip, shotgun blast — they all stack, and they all fire at once
+- **Customize your glorpy!** - Pick your name, pick your color, pick your loadout. Make your little guy *yours*
+- **Up to 4 players** - LAN, internet, couch-adjacent-laptops, whatever works
+- **16 visual themes** - Neon, pastel, monochrome, CRT — the whole arena changes
 - **Level editor** - Build and share your own arenas
-- **16 themes** - Pick your vibe
 
-## Getting started
+## How to play
 
-Grab the latest build from [Releases](https://github.com/xavierhampton/1vi1/releases) - available for Windows and Linux. Extract and run, everything's included.
+Grab the latest build from [Releases](https://github.com/xavierhampton/1vi1/releases) — Windows and Linux. Extract, run, shoot.
+
+### Controls
+
+| Action | Key |
+|--------|-----|
+| Move | A / D |
+| Jump | Space |
+| Shoot | Left Click |
+| Unleash everything | Right Click |
+| Aim | Mouse |
+
+### Multiplayer
+
+1. One player hosts
+2. Others join with the host's IP
+3. Fight
 
 ### Building from source
 
@@ -27,22 +47,6 @@ sudo apt install libgl1-mesa-dev libx11-dev libxrandr-dev libxi-dev libxcursor-d
 cargo run --release
 ```
 
-### Multiplayer
-
-1. One player hosts (starts a game from the menu)
-2. Others join by entering the host's IP address and port
-3. That's it
-
-## Controls
-
-| Action | Key |
-|--------|-----|
-| Move | A / D |
-| Jump | Space |
-| Shoot | Left Click |
-| Use abilities | Right Click |
-| Aim | Mouse |
-
 ## Attribution
 - @keemcc for some map development
 - Raylib's powerful and easy game engine
@@ -50,4 +54,4 @@ cargo run --release
 
 ## License
 
-Do whatever you want with it. Have fun.
+MIT
