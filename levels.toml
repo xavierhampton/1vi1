@@ -2121,3 +2121,983 @@ max = [
     3.0,
 ]
 dps = 40.0
+
+[[level]]
+name = "Smiley"
+enabled = true
+spawn_points = [
+    [
+    -5.5,
+    20.0,
+],
+    [
+    5.0,
+    20.0,
+],
+    [
+    -6.0,
+    2.5,
+],
+    [
+    5.5,
+    2.5,
+],
+]
+lasers = []
+
+[[level.platforms]]
+type = "platform"
+min = [
+    -3.0,
+    0.0,
+]
+max = [
+    -0.0,
+    0.5,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    0.0,
+    -0.0,
+]
+max = [
+    2.5,
+    0.5,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    -5.0,
+    0.5,
+]
+max = [
+    -3.0,
+    1.0,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    2.5,
+    0.5,
+]
+max = [
+    4.5,
+    1.0,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    -6.5,
+    1.0,
+]
+max = [
+    -5.0,
+    1.5,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    4.5,
+    1.0,
+]
+max = [
+    6.0,
+    1.5,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    -7.5,
+    1.5,
+]
+max = [
+    -6.5,
+    2.0,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    -8.0,
+    2.0,
+]
+max = [
+    -7.5,
+    2.5,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    6.0,
+    1.5,
+]
+max = [
+    7.0,
+    2.0,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    7.0,
+    2.0,
+]
+max = [
+    7.5,
+    2.5,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    -9.0,
+    2.5,
+]
+max = [
+    -8.0,
+    3.0,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    7.5,
+    2.5,
+]
+max = [
+    8.5,
+    3.0,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    -9.5,
+    3.0,
+]
+max = [
+    -9.0,
+    3.5,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    -10.0,
+    3.5,
+]
+max = [
+    -9.5,
+    4.0,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    -10.5,
+    4.0,
+]
+max = [
+    -10.0,
+    5.0,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    -11.0,
+    5.0,
+]
+max = [
+    -10.5,
+    5.5,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    -11.5,
+    5.5,
+]
+max = [
+    -11.0,
+    6.5,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    8.5,
+    3.0,
+]
+max = [
+    9.0,
+    3.5,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    9.0,
+    3.5,
+]
+max = [
+    9.5,
+    4.0,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    9.5,
+    4.0,
+]
+max = [
+    10.0,
+    5.0,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    10.0,
+    5.0,
+]
+max = [
+    10.5,
+    5.5,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    10.5,
+    5.5,
+]
+max = [
+    11.0,
+    6.5,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    -12.0,
+    6.5,
+]
+max = [
+    -11.5,
+    8.0,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    -12.5,
+    8.0,
+]
+max = [
+    -12.0,
+    10.0,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    11.0,
+    6.5,
+]
+max = [
+    11.5,
+    8.0,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    11.5,
+    8.0,
+]
+max = [
+    12.0,
+    10.0,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    -12.5,
+    15.5,
+]
+max = [
+    -12.0,
+    17.5,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    -12.0,
+    17.5,
+]
+max = [
+    -11.5,
+    19.0,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    -11.5,
+    19.0,
+]
+max = [
+    -11.0,
+    20.0,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    -11.0,
+    20.0,
+]
+max = [
+    -10.5,
+    20.5,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    -10.5,
+    20.5,
+]
+max = [
+    -10.0,
+    21.5,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    -10.0,
+    21.5,
+]
+max = [
+    -9.5,
+    22.0,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    -9.5,
+    22.0,
+]
+max = [
+    -9.0,
+    22.5,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    -9.0,
+    22.5,
+]
+max = [
+    -8.0,
+    23.0,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    -8.0,
+    23.0,
+]
+max = [
+    -7.5,
+    23.5,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    -7.5,
+    23.5,
+]
+max = [
+    -6.5,
+    24.0,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    -6.5,
+    24.0,
+]
+max = [
+    -5.0,
+    24.5,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    -5.0,
+    24.5,
+]
+max = [
+    -3.0,
+    25.0,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    11.5,
+    15.5,
+]
+max = [
+    12.0,
+    17.5,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    11.0,
+    17.5,
+]
+max = [
+    11.5,
+    19.0,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    10.5,
+    19.0,
+]
+max = [
+    11.0,
+    20.0,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    10.0,
+    20.0,
+]
+max = [
+    10.5,
+    20.5,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    9.5,
+    20.5,
+]
+max = [
+    10.0,
+    21.5,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    9.0,
+    21.5,
+]
+max = [
+    9.5,
+    22.0,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    8.5,
+    22.0,
+]
+max = [
+    9.0,
+    22.5,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    7.5,
+    22.5,
+]
+max = [
+    8.5,
+    23.0,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    7.0,
+    23.0,
+]
+max = [
+    7.5,
+    23.5,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    6.0,
+    23.5,
+]
+max = [
+    7.0,
+    24.0,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    4.5,
+    24.0,
+]
+max = [
+    6.0,
+    24.5,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    2.5,
+    24.5,
+]
+max = [
+    4.5,
+    25.0,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    -3.0,
+    25.0,
+]
+max = [
+    2.5,
+    25.5,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    -7.5,
+    18.5,
+]
+max = [
+    -3.5,
+    19.0,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    3.0,
+    18.5,
+]
+max = [
+    7.0,
+    19.0,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    -6.5,
+    17.0,
+]
+max = [
+    -4.5,
+    18.5,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    4.0,
+    17.0,
+]
+max = [
+    6.0,
+    18.5,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    -3.0,
+    5.0,
+]
+max = [
+    2.5,
+    5.5,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    -8.0,
+    7.0,
+]
+max = [
+    -7.0,
+    7.5,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    -7.0,
+    6.5,
+]
+max = [
+    -6.0,
+    7.0,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    -6.0,
+    6.0,
+]
+max = [
+    -5.0,
+    6.5,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    -5.0,
+    5.5,
+]
+max = [
+    -3.0,
+    6.0,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    2.5,
+    5.5,
+]
+max = [
+    4.5,
+    6.0,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    4.5,
+    6.0,
+]
+max = [
+    5.5,
+    6.5,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    5.5,
+    6.5,
+]
+max = [
+    6.5,
+    7.0,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    6.5,
+    7.0,
+]
+max = [
+    7.5,
+    7.5,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    -1.5,
+    2.0,
+]
+max = [
+    1.0,
+    5.0,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    -1.5,
+    12.0,
+]
+max = [
+    1.0,
+    13.5,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    -8.5,
+    7.5,
+]
+max = [
+    -8.0,
+    8.0,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    7.5,
+    7.5,
+]
+max = [
+    8.0,
+    8.0,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    -7.5,
+    -1.5,
+]
+max = [
+    -7.0,
+    1.5,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    6.5,
+    -1.5,
+]
+max = [
+    7.0,
+    1.5,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    -9.0,
+    -1.5,
+]
+max = [
+    -7.5,
+    -1.0,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    7.0,
+    -1.5,
+]
+max = [
+    8.5,
+    -1.0,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    -16.0,
+    7.5,
+]
+max = [
+    -12.0,
+    8.0,
+]
+
+[[level.platforms]]
+type = "platform"
+min = [
+    11.5,
+    7.5,
+]
+max = [
+    15.5,
+    8.0,
+]
+
+[[level.bounce_pads]]
+min = [
+    -6.5,
+    17.0,
+]
+max = [
+    -4.5,
+    18.5,
+]
+strength = 25.0
+
+[[level.bounce_pads]]
+min = [
+    4.0,
+    17.0,
+]
+max = [
+    6.0,
+    18.5,
+]
+strength = 25.0
+
+[[level.bounce_pads]]
+min = [
+    -1.5,
+    12.0,
+]
+max = [
+    1.0,
+    13.5,
+]
+strength = 25.0
+
+[[level.bounce_pads]]
+min = [
+    -12.5,
+    8.0,
+]
+max = [
+    -12.0,
+    10.0,
+]
+strength = 25.0
+
+[[level.bounce_pads]]
+min = [
+    11.5,
+    8.0,
+]
+max = [
+    12.0,
+    10.0,
+]
+strength = 25.0
+
+[[level.bounce_pads]]
+min = [
+    -16.0,
+    7.5,
+]
+max = [
+    -14.0,
+    8.0,
+]
+strength = 25.0
+
+[[level.bounce_pads]]
+min = [
+    13.5,
+    7.5,
+]
+max = [
+    15.5,
+    8.0,
+]
+strength = 25.0
+
+[[level.lava_pools]]
+min = [
+    -1.5,
+    2.0,
+]
+max = [
+    1.0,
+    5.0,
+]
+dps = 40.0
+
+[[level.lava_pools]]
+min = [
+    -3.0,
+    0.0,
+]
+max = [
+    2.5,
+    0.5,
+]
+dps = 40.0
+
+[[level.lava_pools]]
+min = [
+    -14.0,
+    7.5,
+]
+max = [
+    -12.0,
+    8.0,
+]
+dps = 40.0
+
+[[level.lava_pools]]
+min = [
+    11.5,
+    7.5,
+]
+max = [
+    13.5,
+    8.0,
+]
+dps = 40.0
+
+[[level.lava_pools]]
+min = [
+    -9.0,
+    -1.5,
+]
+max = [
+    -7.0,
+    -1.0,
+]
+dps = 40.0
+
+[[level.lava_pools]]
+min = [
+    6.5,
+    -1.5,
+]
+max = [
+    8.5,
+    -1.0,
+]
+dps = 40.0
