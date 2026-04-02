@@ -1,39 +1,38 @@
 # 1VI1
 
-Lose the round. Pick a card. Come back stronger. Repeat until chaos.
+Retro-style multiplayer shooter. 
+Lose the round. Pick a card. Repeat until chaos.
 
 
 <p align="center">
   <img src="demo/demo.gif" alt="gameplay">
 </p>
 
-## Features
-
-- **Lose rounds, gain power** - After each round, the loser drafts a new ability card. Dash, reflect, gravity flip, shotgun blast — they all stack, and they all fire at once
-- **Customize your glorpy!** - Pick your name, pick your color, pick your loadout. Make your little guy *yours*
-- **Up to 4 players** - LAN, internet, couch-adjacent-laptops, whatever works
-- **16 visual themes** - Neon, pastel, monochrome, CRT — the whole arena changes
-- **Level editor** - Build and share your own arenas
-
 ## How to play
 
-Grab the latest build from [Releases](https://github.com/xavierhampton/1vi1/releases) — Windows and Linux. Extract, run, shoot.
+Grab the latest build from [Releases](https://github.com/xavierhampton/1vi1/releases) — Windows and Linux (Latest Arch glibc). Extract & Run.
+
+## Features
+
+- **Lose rounds, gain power** - After each round, the losers draft a new ability card. They all stack.
+- **Customize your glorpy!** - Make your little guy *yours*.
+- **Up to 4 players** - Connect via LAN or Internet.
+- **Level editor** - Build and share arenas.
+-  **16 visual themes** - Theme virtually everything.
+
+
 
 ### Controls
 
 | Action | Key |
 |--------|-----|
-| Move | A / D |
+| Move | W / A / S / D |
 | Jump | Space |
 | Shoot | Left Click |
-| Unleash everything | Right Click |
+| Abilities | Right Click |
 | Aim | Mouse |
 
-### Multiplayer
 
-1. One player hosts
-2. Others join with the host's IP
-3. Fight
 
 ### Building from source
 
