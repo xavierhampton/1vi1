@@ -1,5 +1,6 @@
 mod audio;
 mod combat;
+mod demo;
 mod editor;
 mod game;
 mod level;
@@ -55,7 +56,7 @@ enum AppState {
     Lobby(LobbyRole),
     InGameHost(GameServer),
     InGameClient(GameClient),
-    ReturnToLobby { name: String, dev_mode: bool, accessories: Vec<(u8, u8, u8, u8)>, settings: Option<GameSettings>, timer: f32, retries: u8 },
+    ReturnToLobby { name: String, dev_mode: bool, accessories: Vec<(u8, u8, u8, u8)>, settings: Option<GameSettings>, color: LobbyColor, timer: f32, retries: u8 },
     Reconnecting { addr: String, name: String, accessories: Vec<(u8, u8, u8, u8)>, timer: f32, retries: u8 },
 }
 
@@ -74,6 +75,9 @@ fn main() {
     let args: Vec<String> = std::env::args().collect();
     if args.iter().any(|a| a == "--level") {
         return run_level_editor();
+    }
+    if args.iter().any(|a| a == "--demo") {
+        return demo::run_demo();
     }
 
     let (mut rl, thread) = raylib::init()
@@ -487,7 +491,8 @@ fn main() {
                             let name = if menu.player_name.is_empty() { "Player".to_string() } else { menu.player_name.clone() };
                             let acc: Vec<_> = menu.accessories.iter().filter(|a| a.0 != 0xFF).cloned().collect();
                             let settings = game_server.world.game_settings.clone();
-                            next_state = Some(AppState::ReturnToLobby { name, dev_mode: menu.dev_mode, accessories: acc, settings: Some(settings), timer: 0.3, retries: 0 });
+                            let color = LobbyColor::from_color(game_server.world.players[0].color);
+                            next_state = Some(AppState::ReturnToLobby { name, dev_mode: menu.dev_mode, accessories: acc, settings: Some(settings), color, timer: 0.3, retries: 0 });
                             match_over_sel = 0;
                         } else {
                             // Exit to Menu
@@ -782,7 +787,7 @@ fn main() {
         }
 
         // Handle deferred lobby creation (wait for port to free up after GameServer drop)
-        if let AppState::ReturnToLobby { ref name, dev_mode, ref accessories, ref settings, ref mut timer, ref mut retries } = app_state {
+        if let AppState::ReturnToLobby { ref name, dev_mode, ref accessories, ref settings, color, ref mut timer, ref mut retries } = app_state {
             if *timer <= 0.0 {
                 let name = name.clone();
                 let acc = accessories.clone();
@@ -793,6 +798,7 @@ fn main() {
                         if let Some(s) = saved_settings {
                             server.state.settings = s;
                         }
+                        server.state.slots[0].color = color;
                         lobby_time = 0.0;
                         app_state = AppState::Lobby(LobbyRole::Host(server));
                     }

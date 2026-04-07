@@ -289,8 +289,12 @@ pub fn draw_hud(
     }
 
     // ── Win text ────────────────────────────────────────────────────────
-    if let GameState::RoundEnd { winner_name, winner_color, .. } = &world.state {
-        let text = format!("{} Wins!", winner_name);
+    if let GameState::RoundEnd { winner_index, winner_name, winner_color, .. } = &world.state {
+        let text = if *winner_index == 0xFF {
+            "DRAW!".to_string()
+        } else {
+            format!("{} Wins!", winner_name)
+        };
         let font_size = 80;
         let text_w = measure_text(&text, font_size);
         let color = Color::new(winner_color.0, winner_color.1, winner_color.2, 255);

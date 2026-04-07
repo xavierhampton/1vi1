@@ -1,6 +1,7 @@
 use raylib::prelude::*;
 
 const PARTICLE_GRAVITY: f32 = 22.0;
+const MAX_PARTICLES: usize = 2000;
 
 // ── Minimal xorshift64 RNG ───────────────────────────────────────────────────
 
@@ -50,6 +51,10 @@ pub fn update_particles(particles: &mut Vec<Particle>, dt: f32) {
         p.lifetime -= dt;
     }
     particles.retain(|p| p.lifetime > 0.0);
+    // Hard cap to prevent frame drops from particle storms
+    if particles.len() > MAX_PARTICLES {
+        particles.drain(0..particles.len() - MAX_PARTICLES);
+    }
 }
 
 // ── Spawn helpers ─────────────────────────────────────────────────────────────

@@ -379,7 +379,10 @@ impl World {
 
                 let new_timer = timer - dt;
                 if new_timer <= 0.0 {
-                    if self.scores.get(wi as usize).copied().unwrap_or(0) >= self.game_settings.wins_to_match {
+                    if wi == 0xFF {
+                        // Draw — no winner, skip card pick, just reset
+                        self.reset_round();
+                    } else if self.scores.get(wi as usize).copied().unwrap_or(0) >= self.game_settings.wins_to_match {
                         self.state = GameState::MatchOver {
                             winner_index: wi,
                             timer: MATCH_OVER_DURATION,
@@ -1139,7 +1142,16 @@ impl World {
                     timer: ROUND_END_DURATION,
                 };
             } else {
-                self.reset_round();
+                // Draw — all players died simultaneously, show round end screen
+                for player in self.players.iter_mut() {
+                    player.shake_timer = 0.0;
+                }
+                self.state = GameState::RoundEnd {
+                    winner_index: 0xFF,
+                    winner_name: "DRAW".to_string(),
+                    winner_color: (200, 200, 200),
+                    timer: ROUND_END_DURATION,
+                };
             }
         }
     }

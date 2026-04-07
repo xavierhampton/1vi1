@@ -66,6 +66,15 @@ impl LobbyColor {
         LobbyColor::Green,
         LobbyColor::Yellow,
     ];
+
+    pub fn from_color(c: Color) -> Self {
+        for (i, (lc, _)) in LOBBY_COLORS.iter().enumerate() {
+            if lc.r == c.r && lc.g == c.g && lc.b == c.b {
+                return Self::ALL[i];
+            }
+        }
+        Self::Blue
+    }
 }
 
 #[derive(Clone, Debug)]
