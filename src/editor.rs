@@ -825,9 +825,13 @@ impl Editor {
         }
     }
 
-    fn draw_toolbar(&self, d: &mut RaylibDrawHandle, canvas_w: i32) {
+    fn draw_toolbar(&mut self, d: &mut RaylibDrawHandle, canvas_w: i32) {
         // Tool bar at top
         d.draw_rectangle(0, 0, canvas_w, 34, Color::new(30, 30, 40, 230));
+
+        let mx = d.get_mouse_x();
+        let my = d.get_mouse_y();
+        let clicked = d.is_mouse_button_pressed(MouseButton::MOUSE_BUTTON_LEFT);
 
         let tools = [Tool::Platform, Tool::Wall, Tool::Spawn, Tool::BouncePad, Tool::Lava, Tool::Laser, Tool::Erase];
         let mut tx = 8;
@@ -835,11 +839,17 @@ impl Editor {
             let label = format!("{} {}", t.key_hint(), t.label());
             let tw = d.measure_text(&label, 16);
             let is_active = *t == self.tool;
-            let col = if is_active { Color::WHITE } else { DIM_TEXT };
+            let hovered = mx >= tx - 4 && mx < tx + tw + 4 && my >= 4 && my < 30;
+            let col = if is_active { Color::WHITE } else if hovered { Color::new(200, 200, 220, 255) } else { DIM_TEXT };
             if is_active {
                 d.draw_rectangle(tx - 4, 4, tw + 8, 26, Color::new(70, 70, 90, 200));
+            } else if hovered {
+                d.draw_rectangle(tx - 4, 4, tw + 8, 26, Color::new(50, 50, 65, 200));
             }
             d.draw_text(&label, tx, 9, 16, col);
+            if hovered && clicked {
+                self.tool = *t;
+            }
             tx += tw + 20;
         }
 
@@ -1013,6 +1023,20 @@ impl Editor {
         let save_label = if self.dirty { "Save (Ctrl+S) *" } else { "Save (Ctrl+S)" };
         if self.draw_button(d, sx + 10, y, btn_w, btn_h, save_label, BTN_COLOR, BTN_HOVER) {
             self.save();
+        }
+        y += btn_h + 4;
+
+        // Test
+        let test_col = Color::new(40, 55, 70, 255);
+        let test_hov = Color::new(55, 75, 95, 255);
+        if self.draw_button(d, sx + 10, y, btn_w, btn_h, "Test Level", test_col, test_hov) {
+            self.save();
+            if let Ok(exe) = std::env::current_exe() {
+                let _ = std::process::Command::new(exe)
+                    .arg("--test")
+                    .arg(self.current.to_string())
+                    .spawn();
+            }
         }
         y += btn_h + 12;
 

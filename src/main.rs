@@ -79,6 +79,10 @@ fn main() {
     if args.iter().any(|a| a == "--demo") {
         return demo::run_demo();
     }
+    if let Some(pos) = args.iter().position(|a| a == "--test") {
+        let level_idx = args.get(pos + 1).and_then(|s| s.parse::<usize>().ok()).unwrap_or(0);
+        return run_level_test(level_idx);
+    }
 
     let (mut rl, thread) = raylib::init()
         .size(SCREEN_WIDTH, SCREEN_HEIGHT)
@@ -410,8 +414,12 @@ fn main() {
                             next_state = Some(AppState::Menu);
                         }
 
-                        if client.rejected {
-                            menu.show_error("Lobby is full");
+                        if let Some(reason) = client.rejected {
+                            let msg = match reason {
+                                lobby::protocol::REJECT_VERSION => "Version mismatch — update your game",
+                                _ => "Lobby is full",
+                            };
+                            menu.show_error(msg);
                             next_state = Some(AppState::Menu);
                         }
 
@@ -844,5 +852,101 @@ fn run_level_editor() {
         }
         let mut d = rl.begin_drawing(&thread);
         ed.draw(&mut d);
+    }
+}
+
+fn run_level_test(level_idx: usize) {
+    use crate::combat::particles::{spawn_from_events, update_particles};
+    use crate::player::input::{self, PlayerInput};
+
+    let (mut rl, thread) = raylib::init()
+        .size(SCREEN_WIDTH, SCREEN_HEIGHT)
+        .title("1VI1 - Level Test")
+        .resizable()
+        .build();
+
+    let state = rl.get_window_state().set_vsync_hint(false);
+    rl.set_window_state(state);
+    rl.set_target_fps(60);
+    rl.set_exit_key(None);
+
+    let mut crt = CrtFilter::new(&mut rl, &thread, SCREEN_WIDTH, SCREEN_HEIGHT);
+    let mut render_w = SCREEN_WIDTH;
+    let mut render_h = SCREEN_HEIGHT;
+    let mut world = World::for_test(level_idx as u8);
+    let mut inputs = vec![PlayerInput::empty(); 2];
+    let mut game_time: f32 = 0.0;
+    let mut card_anim = CardPickAnim::new();
+
+    while !rl.window_should_close() {
+        let dt = rl.get_frame_time();
+
+        if rl.is_key_pressed(KeyboardKey::KEY_ESCAPE) {
+            break;
+        }
+
+        let w = rl.get_screen_width().max(1);
+        let h = rl.get_screen_height().max(1);
+        if w != render_w || h != render_h {
+            render_w = w;
+            render_h = h;
+            crt = CrtFilter::new(&mut rl, &thread, render_w, render_h);
+        }
+
+        game_time += dt;
+        let camera = render::camera::game_camera(&world);
+
+        // Player 0: keyboard/mouse
+        if world.players[0].alive || !matches!(world.state, GameState::Playing) {
+            let center = Vector2::new(
+                world.players[0].position.x,
+                world.players[0].position.y + world.players[0].size.y / 2.0,
+            );
+            inputs[0] = input::read_input(&rl, &camera, center);
+        }
+
+        // Player 1: dummy AI — aim at player 0
+        {
+            let mut move_dir = 0.0;
+            if rl.is_key_down(KeyboardKey::KEY_LEFT) { move_dir -= 1.0; }
+            if rl.is_key_down(KeyboardKey::KEY_RIGHT) { move_dir += 1.0; }
+            inputs[1].move_dir = move_dir;
+            inputs[1].jump_pressed |= rl.is_key_pressed(KeyboardKey::KEY_UP);
+            inputs[1].jump_held = rl.is_key_down(KeyboardKey::KEY_UP);
+            let dx = world.players[0].position.x - world.players[1].position.x;
+            let dy = (world.players[0].position.y + world.players[0].size.y / 2.0)
+                   - (world.players[1].position.y + world.players[1].size.y / 2.0);
+            let len = (dx * dx + dy * dy).sqrt();
+            if len > 0.01 {
+                inputs[1].aim_dir = Vector2::new(dx / len, dy / len);
+            }
+        }
+
+        // Card pick: auto-pick for both players
+        if let GameState::CardPick { current_picker, chosen_card, phase_timer, .. } = &world.state {
+            if chosen_card.is_none() && *phase_timer <= 0.0 {
+                world.process_card_choice(*current_picker, 0);
+            }
+        }
+
+        let events = world.server_update(&inputs, dt);
+        spawn_from_events(&events, &mut world.particles, &mut world.rng);
+        update_particles(&mut world.particles, dt);
+
+        // Clear one-shot inputs
+        for inp in &mut inputs {
+            inp.jump_pressed = false;
+            inp.shoot_pressed = false;
+            inp.ability_pressed = false;
+        }
+
+        card_anim.update(&world, dt);
+        let themes = menu::theme::all_themes();
+        let theme = &themes[0];
+        render::game::draw_world(
+            &mut rl, &thread, &mut crt, &world, camera,
+            render_w, render_h, theme, game_time, &card_anim, 0,
+            false, None,
+        );
     }
 }

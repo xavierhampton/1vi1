@@ -109,6 +109,44 @@ impl World {
         }
     }
 
+    pub fn for_test(level_id: u8) -> Self {
+        let level = level::level_by_id(level_id);
+        let colors = [
+            crate::lobby::state::LobbyColor::Blue.to_color(),
+            crate::lobby::state::LobbyColor::Red.to_color(),
+        ];
+        let players: Vec<Player> = (0..2).map(|i| {
+            Player::new(
+                level.spawn_points[i],
+                Vector3::new(0.6, 1.6, 0.6),
+                colors[i],
+                if i == 0 { "Player" } else { "Dummy" },
+            )
+        }).collect();
+        let seed = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos() as u64)
+            .unwrap_or(42);
+        Self {
+            cursor_positions: vec![(0.5, 0.5); 2],
+            players,
+            bullets: Vec::new(),
+            particles: Vec::new(),
+            level,
+            state: GameState::RoundStart { timer: COUNTDOWN_DURATION },
+            scores: vec![0; 2],
+            rng: Rng::new(seed),
+            card_hover: 0xFF,
+            sticky_bombs: Vec::new(),
+            healing_zones: Vec::new(),
+            echo_queue: Vec::new(),
+            game_settings: GameSettings::default(),
+            latest_events: Vec::new(),
+            elapsed_time: 0.0,
+            level_queue: LevelQueue::new(),
+        }
+    }
+
     fn base_hp(&self) -> f32 {
         if self.game_settings.sudden_death { 1.0 } else { self.game_settings.starting_hp }
     }

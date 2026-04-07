@@ -11,7 +11,7 @@ use crate::lobby::state::LobbyState;
 pub struct LobbyClient {
     pub state: LobbyState,
     pub my_index: u8,
-    pub rejected: bool,
+    pub rejected: Option<u8>,
     pub game_starting: bool,
     pub host_disbanded: Option<String>,
     pub(crate) write_stream: Option<TcpStream>,
@@ -40,7 +40,7 @@ impl LobbyClient {
         let mut client = Self {
             state: LobbyState { slots: Vec::new(), settings: crate::lobby::state::GameSettings::default() },
             my_index: 0,
-            rejected: false,
+            rejected: None,
             game_starting: false,
             host_disbanded: None,
             write_stream: Some(write_stream),
@@ -49,7 +49,7 @@ impl LobbyClient {
             _reader_handle: reader_handle,
         };
 
-        client.send(ClientMsg::Join { name: name.to_string(), accessories });
+        client.send(ClientMsg::Join { name: name.to_string(), accessories, version: protocol::PROTOCOL_VERSION });
 
         Ok(client)
     }
@@ -66,8 +66,8 @@ impl LobbyClient {
                         self.my_index = my_index;
                         self.state = state;
                     }
-                    ServerMsg::Rejected { .. } => {
-                        self.rejected = true;
+                    ServerMsg::Rejected { reason } => {
+                        self.rejected = Some(reason);
                     }
                     ServerMsg::GameStart => {
                         self.game_starting = true;

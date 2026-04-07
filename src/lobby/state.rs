@@ -25,11 +25,15 @@ impl Default for GameSettings {
     }
 }
 
-pub const LOBBY_COLORS: [(Color, &str); 4] = [
+pub const LOBBY_COLORS: [(Color, &str); 8] = [
     (Color::new(80, 180, 255, 255), "Blue"),
     (Color::new(255, 100, 80, 255), "Red"),
     (Color::new(100, 230, 120, 255), "Green"),
     (Color::new(255, 200, 60, 255), "Yellow"),
+    (Color::new(230, 230, 240, 255), "White"),
+    (Color::new(200, 120, 255, 255), "Purple"),
+    (Color::new(255, 140, 60, 255), "Orange"),
+    (Color::new(255, 130, 180, 255), "Pink"),
 ];
 
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -39,7 +43,13 @@ pub enum LobbyColor {
     Red = 1,
     Green = 2,
     Yellow = 3,
+    White = 4,
+    Purple = 5,
+    Orange = 6,
+    Pink = 7,
 }
+
+pub const LOBBY_COLOR_COUNT: usize = 8;
 
 impl LobbyColor {
     pub fn from_u8(v: u8) -> Option<Self> {
@@ -48,6 +58,10 @@ impl LobbyColor {
             1 => Some(Self::Red),
             2 => Some(Self::Green),
             3 => Some(Self::Yellow),
+            4 => Some(Self::White),
+            5 => Some(Self::Purple),
+            6 => Some(Self::Orange),
+            7 => Some(Self::Pink),
             _ => None,
         }
     }
@@ -60,11 +74,15 @@ impl LobbyColor {
         LOBBY_COLORS[self as usize].1
     }
 
-    pub const ALL: [LobbyColor; 4] = [
+    pub const ALL: [LobbyColor; LOBBY_COLOR_COUNT] = [
         LobbyColor::Blue,
         LobbyColor::Red,
         LobbyColor::Green,
         LobbyColor::Yellow,
+        LobbyColor::White,
+        LobbyColor::Purple,
+        LobbyColor::Orange,
+        LobbyColor::Pink,
     ];
 
     pub fn from_color(c: Color) -> Self {
@@ -125,8 +143,8 @@ impl LobbyState {
 
     pub fn next_available_color(&self, current: LobbyColor, my_index: usize) -> LobbyColor {
         let start = current as usize;
-        for offset in 1..=4 {
-            let idx = (start + offset) % 4;
+        for offset in 1..=LOBBY_COLOR_COUNT {
+            let idx = (start + offset) % LOBBY_COLOR_COUNT;
             let c = LobbyColor::from_u8(idx as u8).unwrap();
             if !self.color_taken(c, Some(my_index)) {
                 return c;
@@ -137,8 +155,8 @@ impl LobbyState {
 
     pub fn prev_available_color(&self, current: LobbyColor, my_index: usize) -> LobbyColor {
         let start = current as usize;
-        for offset in 1..=4 {
-            let idx = (start + 4 - offset) % 4;
+        for offset in 1..=LOBBY_COLOR_COUNT {
+            let idx = (start + LOBBY_COLOR_COUNT - offset) % LOBBY_COLOR_COUNT;
             let c = LobbyColor::from_u8(idx as u8).unwrap();
             if !self.color_taken(c, Some(my_index)) {
                 return c;

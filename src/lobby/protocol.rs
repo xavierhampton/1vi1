@@ -6,7 +6,7 @@ use crate::player::input::PlayerInput;
 
 #[derive(Debug)]
 pub enum ClientMsg {
-    Join { name: String, accessories: Vec<(u8, u8, u8, u8)> },
+    Join { name: String, accessories: Vec<(u8, u8, u8, u8)>, version: u8 },
     ChangeColor { color: u8 },
     ToggleReady,
     Leave,
@@ -37,16 +37,21 @@ pub enum ServerIncoming {
     Disconnected,
 }
 
+// Protocol version — bump when wire format changes
+pub const PROTOCOL_VERSION: u8 = 1;
+
 // Rejection reasons
 pub const REJECT_FULL: u8 = 1;
+pub const REJECT_VERSION: u8 = 2;
 
 // ── Wire format: [u16 len][u8 type][payload...] ─────────────────────────────
 
 pub fn encode_client(msg: &ClientMsg) -> Vec<u8> {
     let mut payload = Vec::new();
     match msg {
-        ClientMsg::Join { name, accessories } => {
+        ClientMsg::Join { name, accessories, .. } => {
             payload.push(0x01);
+            payload.push(PROTOCOL_VERSION);
             let bytes = name.as_bytes();
             payload.push(bytes.len() as u8);
             payload.extend_from_slice(bytes);
@@ -155,10 +160,12 @@ pub fn decode_client_incoming(buf: &[u8]) -> Option<(ClientIncoming, usize)> {
     let msg = match data[0] {
         // Lobby messages
         0x01 => {
-            let name_len = data[1] as usize;
-            if data.len() < 2 + name_len { return None; }
-            let name = String::from_utf8_lossy(&data[2..2 + name_len]).to_string();
-            let mut pos = 2 + name_len;
+            if data.len() < 2 { return None; }
+            let version = data[1];
+            let name_len = data[2] as usize;
+            if data.len() < 3 + name_len { return None; }
+            let name = String::from_utf8_lossy(&data[3..3 + name_len]).to_string();
+            let mut pos = 3 + name_len;
             let mut accessories = Vec::new();
             if pos < data.len() {
                 let count = data[pos] as usize;
@@ -169,7 +176,7 @@ pub fn decode_client_incoming(buf: &[u8]) -> Option<(ClientIncoming, usize)> {
                     pos += 4;
                 }
             }
-            ClientIncoming::Lobby(ClientMsg::Join { name, accessories })
+            ClientIncoming::Lobby(ClientMsg::Join { name, accessories, version })
         }
         0x02 => ClientIncoming::Lobby(ClientMsg::ChangeColor { color: data[1] }),
         0x03 => ClientIncoming::Lobby(ClientMsg::ToggleReady),

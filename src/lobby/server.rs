@@ -101,8 +101,14 @@ impl LobbyServer {
                         ClientIncoming::GameInput(_) | ClientIncoming::CardChoice(_) => continue, // ignore during lobby
                     };
                     match msg {
-                        ClientMsg::Join { name, accessories } => {
-                            if self.state.slots.len() >= 4 {
+                        ClientMsg::Join { name, accessories, version } => {
+                            if version != protocol::PROTOCOL_VERSION {
+                                if let Some(Some(stream)) = self.client_streams.get_mut(id) {
+                                    let _ = stream.write_all(&protocol::encode_server(
+                                        &protocol::ServerMsg::Rejected { reason: protocol::REJECT_VERSION },
+                                    ));
+                                }
+                            } else if self.state.slots.len() >= 4 {
                                 if let Some(Some(stream)) = self.client_streams.get_mut(id) {
                                     let _ = stream.write_all(&protocol::encode_server(
                                         &protocol::ServerMsg::Rejected { reason: REJECT_FULL },
