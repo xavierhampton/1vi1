@@ -2,6 +2,7 @@ use std::fs;
 use std::path::PathBuf;
 
 use super::customize::{Equipped, ACCESSORY_NONE, MAX_EQUIPPED};
+use crate::lobby::state::LOBBY_COLOR_COUNT;
 
 const SETTINGS_FILE: &str = "user_settings.cfg";
 
@@ -96,7 +97,7 @@ impl UserSettings {
                 }
                 "color" => {
                     if let Ok(v) = val.parse::<usize>() {
-                        s.preview_color = v.min(3);
+                        s.preview_color = v.min(LOBBY_COLOR_COUNT - 1);
                     }
                 }
                 "acc0" | "acc1" | "acc2" => {

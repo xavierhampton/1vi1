@@ -175,7 +175,7 @@ impl Editor {
         let sh = rl.get_screen_height();
         let mx = rl.get_mouse_x() as f32;
         let my = rl.get_mouse_y() as f32;
-        let in_canvas = mx < (sw - SIDEBAR_WIDTH) as f32;
+        let in_canvas = mx < (sw - SIDEBAR_WIDTH) as f32 && my > 34.0;
 
         // ── Name editing ────────────────────────────────────────────────
         if self.editing_name {
@@ -264,6 +264,14 @@ impl Editor {
             || rl.is_mouse_button_released(MouseButton::MOUSE_BUTTON_RIGHT)
         {
             self.panning = false;
+        }
+
+        // Cancel drags when clicking outside the canvas (toolbar / sidebar)
+        if !in_canvas && rl.is_mouse_button_pressed(MouseButton::MOUSE_BUTTON_LEFT) {
+            self.drag_start = None;
+            self.pad_drag_start = None;
+            self.lava_drag_start = None;
+            self.laser_start = None;
         }
 
         // ── Canvas interactions ─────────────────────────────────────────
@@ -870,7 +878,7 @@ impl Editor {
 
         // Level list
         let item_h = 28;
-        let list_h = (sh - 200).max(100);
+        let list_h = (sh - 360).max(60);
         let _visible_items = list_h / item_h;
 
         let mx = d.get_mouse_x();

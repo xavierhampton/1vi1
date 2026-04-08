@@ -62,6 +62,7 @@ pub struct World {
     pub latest_events: Vec<GameEvent>, // last frame's events for audio
     pub elapsed_time: f32,
     pub level_queue: LevelQueue,
+    pub test_level: Option<u8>, // Some(id) = editor test mode: skip countdown, keep same level
 }
 
 impl World {
@@ -106,6 +107,7 @@ impl World {
             latest_events: Vec::new(),
             elapsed_time: 0.0,
             level_queue,
+            test_level: None,
         }
     }
 
@@ -133,7 +135,7 @@ impl World {
             bullets: Vec::new(),
             particles: Vec::new(),
             level,
-            state: GameState::RoundStart { timer: COUNTDOWN_DURATION },
+            state: GameState::Playing,
             scores: vec![0; 2],
             rng: Rng::new(seed),
             card_hover: 0xFF,
@@ -144,6 +146,7 @@ impl World {
             latest_events: Vec::new(),
             elapsed_time: 0.0,
             level_queue: LevelQueue::new(),
+            test_level: Some(level_id),
         }
     }
 
@@ -152,7 +155,11 @@ impl World {
     }
 
     fn reset_round(&mut self) {
-        self.level = self.level_queue.next(self.rng.next());
+        if let Some(id) = self.test_level {
+            self.level = level::level_by_id(id);
+        } else {
+            self.level = self.level_queue.next(self.rng.next());
+        }
         let base_hp = self.base_hp();
 
         for (i, player) in self.players.iter_mut().enumerate() {
@@ -193,7 +200,11 @@ impl World {
         self.sticky_bombs.clear();
         self.healing_zones.clear();
         self.echo_queue.clear();
-        self.state = GameState::RoundStart { timer: COUNTDOWN_DURATION };
+        if self.test_level.is_some() {
+            self.state = GameState::Playing;
+        } else {
+            self.state = GameState::RoundStart { timer: COUNTDOWN_DURATION };
+        }
     }
 
     fn kill_player_server(&mut self, idx: usize, events: &mut Vec<GameEvent>) {

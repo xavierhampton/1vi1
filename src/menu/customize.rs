@@ -1,7 +1,7 @@
 use raylib::prelude::*;
 
 use super::theme::Theme;
-use crate::lobby::state::LOBBY_COLORS;
+use crate::lobby::state::{LOBBY_COLORS, LOBBY_COLOR_COUNT};
 
 // ── Accessory catalog ────────────────────────────────────────────────────────
 
@@ -269,10 +269,10 @@ impl CustomizeEditor {
         } else {
             // Player color (A/D)
             if rl.is_key_pressed(KeyboardKey::KEY_LEFT) || rl.is_key_pressed(KeyboardKey::KEY_A) {
-                self.preview_color = (self.preview_color + 3) % 4;
+                self.preview_color = (self.preview_color + LOBBY_COLOR_COUNT - 1) % LOBBY_COLOR_COUNT;
             }
             if rl.is_key_pressed(KeyboardKey::KEY_RIGHT) || rl.is_key_pressed(KeyboardKey::KEY_D) {
-                self.preview_color = (self.preview_color + 1) % 4;
+                self.preview_color = (self.preview_color + 1) % LOBBY_COLOR_COUNT;
             }
         }
 
@@ -342,9 +342,9 @@ impl CustomizeEditor {
             let pw = ly.preview_w;
             if mx >= px && mx < px + pw && my >= ly.color_sel_y && my < ly.color_sel_y + 26 {
                 if mx < px + pw / 2 {
-                    self.preview_color = (self.preview_color + 3) % 4;
+                    self.preview_color = (self.preview_color + LOBBY_COLOR_COUNT - 1) % LOBBY_COLOR_COUNT;
                 } else {
-                    self.preview_color = (self.preview_color + 1) % 4;
+                    self.preview_color = (self.preview_color + 1) % LOBBY_COLOR_COUNT;
                 }
             }
         }
